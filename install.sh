@@ -7,7 +7,6 @@ REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
 INSTALL_DIR="$HOME/.config/Ax-Shell"
 
 # --- FIX FUNCTIONS ---
-# Function to automatically fix missing Python imports and indentation errors
 fix_python_imports() {
     local file_path="$1"
     local import_line="$2"
@@ -45,9 +44,7 @@ fix_python_imports() {
         local before=("${lines[@]:0:target_index}")
         local after=("${lines[@]:target_index}")
         
-        # Write content back to the file with the new line added and proper indentation
         printf "%s\n" "${before[@]}" > "$file_path"
-        # The added line must be correctly indented (no tabs, just spaces)
         echo "${current_indentation}${import_line}" >> "$file_path"
         printf "%s\n" "${after[@]}" >> "$file_path"
         
@@ -88,9 +85,9 @@ sudo apt install -y \
     gir1.2-girepository-2.0 golang-go libpugixml-dev \
     libcvc0t64 gir1.2-cvc-1.0 python3-xdg python3-dbus scdoc
 
-# Install remaining dependencies (Separated to fix the 'socat' execution error)
+# Install remaining dependencies
 echo "Installing specific runtime dependencies..."
-# This separate command eliminates the mysterious execution error
+
 sudo apt install -y socat playerctl python3-networkmanager gir1.2-nm-1.0 gir1.2-playerctl-2.0 gir1.2-gnomebluetooth-3.0
 
 # Create necessary directories
@@ -125,11 +122,10 @@ echo "✅ uwsm installed"
 
 # --- FABRIC CLEANUP AND INSTALLATION FIX (Crucial for PyGObject) ---
 echo "Cleaning up conflicting user-installed Python packages..."
-# Force removal of potentially conflicting local packages
 /usr/bin/env python3 -m pip uninstall -y fabric PyGObject pycairo --break-system-packages 2>/dev/null || true
 
 echo "Installing Fabric GUI framework using --break-system-packages and skipping dependencies..."
-# Install Fabric without dependencies to force it to use the system PyGObject
+
 /usr/bin/env python3 -m pip install --break-system-packages --no-deps --no-cache-dir git+https://github.com/Fabric-Development/fabric.git
 echo "✅ Fabric installed"
 # --- END FABRIC FIX ---
@@ -179,7 +175,7 @@ echo "✅ Fonts installation completed"
 
 # --- PYTHON CODE FIXES (Crucial for launch) ---
 echo "Applying Python import fixes to Ax-Shell source files..."
-# 1. Fix missing NetworkClient import in modules/metrics.py (Line 22)
+
 fix_python_imports \
     "$INSTALL_DIR/modules/metrics.py" \
     "from services.network import NetworkClient" \
