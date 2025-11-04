@@ -83,7 +83,7 @@ curl -fsSL https://raw.githubusercontent.com/Ackerman-00/Ax-Shell-Quiet/main/ins
 
 2. Download and run Ax-Shell:
     ```bash
-    git clone https://github.com/Ackerman-00/Ax-Shell-Quiet.git ~/.config/Ax-Shell-Quiet
+    git clone https://github.com/Ackerman-00/Ax-Shell-Quiet.git ~/.config/Ax-Shell
     uwsm -- app python ~/.config/Ax-Shell/main.py > /dev/null 2>&1 & disown
     ```
 
