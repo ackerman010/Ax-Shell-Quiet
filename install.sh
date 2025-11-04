@@ -14,6 +14,10 @@ echo "=============================================="
 echo "Updating package lists..."
 sudo apt update
 
+# First, remove conflicting system packages
+echo "Removing conflicting system packages..."
+sudo apt remove -y python3-fabric fabric || true
+
 # Install essential packages in one go
 echo "Installing all required packages..."
 sudo apt install -y \
@@ -37,7 +41,7 @@ sudo apt install -y \
     libwayland-dev wayland-protocols libxkbcommon-dev \
     python3-setuptools python3-wheel python3-build python3-installer \
     libgirepository1.0-dev python3-dev libffi-dev gir1.2-glib-2.0 \
-    gir1.2-girepository-2.0
+    gir1.2-girepository-2.0 golang-go
 
 # Create necessary directories
 echo "Creating necessary directories..."
@@ -50,7 +54,8 @@ if [ -d "$VENV_DIR" ]; then
     rm -rf "$VENV_DIR"
 fi
 
-python3 -m venv "$VENV_DIR" --system-site-packages
+# Create venv WITHOUT system packages to avoid conflicts
+python3 -m venv "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
 
 echo "✅ Virtual environment created at $VENV_DIR"
@@ -61,7 +66,7 @@ echo "Installing Python packages in virtual environment..."
 # Upgrade pip first
 "$VENV_DIR/bin/pip" install --upgrade pip
 
-# Install all Python dependencies at once
+# Install all Python dependencies at once (fresh install in venv)
 "$VENV_DIR/bin/pip" install \
     psutil \
     requests \
@@ -71,12 +76,14 @@ echo "Installing Python packages in virtual environment..."
     setproctitle \
     pywayland \
     loguru \
-    click
+    click \
+    cffi \
+    pycparser
 
 echo "✅ Python dependencies installed"
 
-# --- Install Fabric from Source ---
-echo "Installing Fabric..."
+# --- Install Fabric GTK Framework (NOT the deployment tool) ---
+echo "Installing Fabric GTK framework..."
 
 FABRIC_DIR="$HOME/.local/src/fabric"
 if [ -d "$FABRIC_DIR" ]; then
@@ -88,11 +95,11 @@ else
 fi
 
 cd "$FABRIC_DIR"
+# Install Fabric
 "$VENV_DIR/bin/pip" install .
+echo "✅ Fabric GTK framework installed"
 
-echo "✅ Fabric installed"
-
-# --- Install fabric-cli ---
+# --- Install fabric-cli (AUR-style with meson) ---
 echo "Installing fabric-cli..."
 
 FABRIC_CLI_DIR="$HOME/.local/src/fabric-cli"
@@ -104,10 +111,33 @@ else
     git clone --depth=1 https://github.com/Fabric-Development/fabric-cli.git "$FABRIC_CLI_DIR"
 fi
 
+# Build fabric-cli using meson (AUR-style)
 cd "$FABRIC_CLI_DIR"
-"$VENV_DIR/bin/pip" install .
-
-echo "✅ fabric-cli installed"
+if [ -f "meson.build" ]; then
+    echo "Building fabric-cli with meson..."
+    rm -rf build
+    if meson setup build --prefix=/usr --buildtype=release && \
+       ninja -C build && \
+       sudo ninja -C build install; then
+        echo "✅ fabric-cli installed"
+    else
+        echo "❌ fabric-cli build failed"
+        # Try alternative: check if there's a built binary
+        if [ -f "build/fabric-cli" ]; then
+            sudo cp build/fabric-cli /usr/local/bin/
+            echo "✅ fabric-cli installed manually"
+        fi
+    fi
+else
+    echo "❌ fabric-cli: No meson.build found"
+    # Fallback: if it's a Go project, build with Go
+    if [ -f "go.mod" ]; then
+        echo "Building fabric-cli with Go..."
+        go build -o fabric-cli
+        sudo cp fabric-cli /usr/local/bin/
+        echo "✅ fabric-cli installed via Go"
+    fi
+fi
 
 # --- Install Hyprpicker ---
 echo "Installing Hyprpicker..."
@@ -288,7 +318,7 @@ command -v hyprpicker >/dev/null 2>&1 && echo "✅ Hyprpicker" || echo "❌ Hypr
 command -v hyprsunset >/dev/null 2>&1 && echo "✅ Hyprsunset" || echo "❌ Hyprsunset"
 command -v gray >/dev/null 2>&1 && echo "✅ Gray" || echo "❌ Gray"
 "$VENV_DIR/bin/python" -c "import fabric" 2>/dev/null && echo "✅ Fabric" || echo "❌ Fabric"
-"$VENV_DIR/bin/python" -c "import fabric_cli" 2>/dev/null && echo "✅ fabric-cli" || echo "❌ fabric-cli"
+command -v fabric-cli >/dev/null 2>&1 && echo "✅ fabric-cli" || echo "❌ fabric-cli"
 "$VENV_DIR/bin/python" -c "import gi" 2>/dev/null && echo "✅ PyGObject" || echo "❌ PyGObject"
 
 # Run configuration if available
