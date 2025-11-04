@@ -6,6 +6,7 @@ set -o pipefail  # Prevent errors in a pipeline from being masked
 
 REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
 INSTALL_DIR="$HOME/.config/Ax-Shell"
+VENV_DIR="$HOME/.ax-shell-venv"
 
 # Package list for PikaOS - Debian package names
 PACKAGES=(
@@ -63,8 +64,10 @@ PACKAGES=(
     # Python GI packages (Debian names)
     python3-gi
     python3-gi-cairo
-    # Python pip
+    # Python pip and virtual environment
+    python3-full
     python3-pip
+    python3-venv
 )
 
 # Python packages for Ax-Shell (Debian package names)
@@ -104,16 +107,22 @@ BUILD_PACKAGES=(
     python3-wheel
     python3-build
     python3-installer
-    # PyGObject build dependencies
+    # PyGObject build dependencies (Arch-style)
     libgirepository1.0-dev
     libcairo2-dev
     python3-dev
+    # Additional deps from Arch package
+    libffi-dev
+    gir1.2-glib-2.0
 )
 
-# Fabric Python dependencies
-FABRIC_PYTHON_DEPS=(
-    loguru
-    click
+# PyGObject specific build dependencies
+PYGOBJECT_BUILD_DEPS=(
+    python3-pydata-sphinx-theme
+    python3-sphinx
+    python3-sphinx-copybutton
+    python3-pytest
+    xvfb
 )
 
 # Prevent running as root
@@ -139,6 +148,9 @@ sudo apt install -y "${PYTHON_PACKAGES[@]}"
 echo "Installing build dependencies..."
 sudo apt install -y "${BUILD_PACKAGES[@]}"
 
+echo "Installing PyGObject build dependencies..."
+sudo apt install -y "${PYGOBJECT_BUILD_DEPS[@]}"
+
 # Create necessary directories
 echo "Creating necessary directories..."
 mkdir -p "$HOME/.local/src"
@@ -146,12 +158,73 @@ mkdir -p "$HOME/.local/bin"
 mkdir -p "$HOME/.fonts"
 mkdir -p "$HOME/.local/lib/python3.12/site-packages"
 
-# --- Install PyGObject via pip for better compatibility ---
-echo "Installing PyGObject via pip for better compatibility..."
-pip3 install --user pygobject
+# --- Create Python Virtual Environment ---
+echo "Setting up Python virtual environment..."
+if [ -d "$VENV_DIR" ]; then
+    echo "Virtual environment already exists, recreating..."
+    rm -rf "$VENV_DIR"
+fi
 
-# --- Install Fabric from Source (AUR-style) ---
-echo "Building and installing Fabric from source (AUR-style)..."
+python3 -m venv "$VENV_DIR"
+source "$VENV_DIR/bin/activate"
+
+echo "✅ Virtual environment created at $VENV_DIR"
+
+# --- Build and Install PyGObject from Source (Arch-style) ---
+echo "Building PyGObject from source (Arch-style)..."
+
+PYGOBJECT_DIR="$HOME/.local/src/pygobject"
+PYGOBJECT_VERSION="3.46.0"  # Using a stable version that works well
+
+if [ -d "$PYGOBJECT_DIR" ]; then
+    echo "Updating PyGObject repository..."
+    git -C "$PYGOBJECT_DIR" pull
+else
+    echo "Cloning PyGObject repository..."
+    git clone --depth=1 https://gitlab.gnome.org/GNOME/pygobject.git "$PYGOBJECT_DIR"
+    cd "$PYGOBJECT_DIR"
+    # Checkout a specific stable version
+    git checkout "$PYGOBJECT_VERSION" 2>/dev/null || echo "Using latest version"
+fi
+
+cd "$PYGOBJECT_DIR"
+
+echo "Building PyGObject with meson..."
+# Clean previous builds
+rm -rf build
+
+# Build with meson (Arch-style approach)
+export PKG_CONFIG_PATH="$VENV_DIR/lib/pkgconfig:$PKG_CONFIG_PATH"
+export PYTHONPATH="$VENV_DIR/lib/python3.12/site-packages:$PYTHONPATH"
+
+# Configure the build
+meson setup build \
+    --prefix="$VENV_DIR" \
+    --libdir="$VENV_DIR/lib" \
+    --bindir="$VENV_DIR/bin" \
+    --buildtype=release \
+    -Dpython="$VENV_DIR/bin/python" \
+    -Dpycairo=false \
+    -Dtests=false
+
+# Build and install
+echo "Compiling PyGObject..."
+ninja -C build
+ninja -C build install
+
+echo "✅ PyGObject installed successfully in virtual environment"
+
+# --- Install remaining Python packages in virtual environment ---
+echo "Installing Python packages in virtual environment..."
+
+# Upgrade pip first
+"$VENV_DIR/bin/pip" install --upgrade pip
+
+# Install core Python dependencies (excluding PyGObject since we built it)
+"$VENV_DIR/bin/pip" install psutil requests watchdog ijson toml setproctitle pywayland loguru click
+
+# --- Install Fabric from Source in Virtual Environment ---
+echo "Building and installing Fabric from source..."
 
 FABRIC_DIR="$HOME/.local/src/fabric"
 if [ -d "$FABRIC_DIR" ]; then
@@ -162,36 +235,30 @@ else
     git clone --depth=1 https://github.com/Fabric-Development/fabric.git "$FABRIC_DIR"
 fi
 
-# Install Fabric Python dependencies first
-echo "Installing Fabric Python dependencies..."
-pip3 install --user "${FABRIC_PYTHON_DEPS[@]}"
-
-# Build and install Fabric using AUR-style approach
+# Build and install Fabric in virtual environment
 cd "$FABRIC_DIR"
 echo "Building Fabric with Python build system..."
 
-# Get version info (AUR-style)
+# Get version info
 FABRIC_VERSION="r$(git rev-list --count HEAD).$(git rev-parse --short=7 HEAD)"
 echo "Building Fabric version: $FABRIC_VERSION"
 
-# Build the wheel
-if python3 -m build --wheel --no-isolation; then
-    # Install the wheel
+# Build and install in virtual environment
+if "$VENV_DIR/bin/python" -m build --wheel --no-isolation; then
     WHEEL_FILE=$(ls dist/*.whl | head -n1)
     if [ -n "$WHEEL_FILE" ]; then
-        pip3 install --user "$WHEEL_FILE"
+        "$VENV_DIR/bin/pip" install "$WHEEL_FILE"
         echo "✅ Fabric $FABRIC_VERSION installed successfully"
     else
-        echo "❌ No wheel file found for Fabric"
-        # Fallback: install directly
-        pip3 install --user .
+        echo "❌ No wheel file found for Fabric, trying direct install..."
+        "$VENV_DIR/bin/pip" install .
     fi
 else
     echo "❌ Fabric build failed, trying direct installation..."
-    pip3 install --user .
+    "$VENV_DIR/bin/pip" install .
 fi
 
-# --- Install fabric-cli ---
+# --- Install fabric-cli in Virtual Environment ---
 echo "Installing fabric-cli..."
 
 FABRIC_CLI_DIR="$HOME/.local/src/fabric-cli"
@@ -203,9 +270,9 @@ else
     git clone --depth=1 https://github.com/Fabric-Development/fabric-cli.git "$FABRIC_CLI_DIR"
 fi
 
-# Install fabric-cli
+# Install fabric-cli in virtual environment
 cd "$FABRIC_CLI_DIR"
-pip3 install --user .
+"$VENV_DIR/bin/pip" install .
 
 echo "✅ fabric-cli installed successfully"
 
@@ -225,12 +292,17 @@ fi
 cd "$HYPRPICKER_DIR"
 if [ -f "CMakeLists.txt" ]; then
     echo "Building Hyprpicker with CMake..."
+    # Clean previous build
+    rm -rf build
     if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
-       cmake --build build && \
+       cmake --build build -j$(nproc) && \
        sudo cmake --install build; then
         echo "✅ Hyprpicker installed successfully"
     else
-        echo "❌ Hyprpicker installation failed"
+        echo "❌ Hyprpicker installation failed - checking for missing dependencies..."
+        # Check for specific missing dependencies
+        pkg-config --exists hyprwayland-scanner || echo "  - hyprwayland-scanner might be missing"
+        pkg-config --exists hyprutils || echo "  - hyprutils might be missing"
     fi
 else
     echo "No CMakeLists.txt found for Hyprpicker"
@@ -272,12 +344,16 @@ fi
 cd "$HYPRSUNSET_DIR"
 if [ -f "CMakeLists.txt" ]; then
     echo "Building Hyprsunset with CMake..."
+    # Clean previous build
+    rm -rf build
     if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
-       cmake --build build && \
+       cmake --build build -j$(nproc) && \
        sudo cmake --install build; then
         echo "✅ Hyprsunset installed successfully"
     else
-        echo "❌ Hyprsunset installation failed"
+        echo "❌ Hyprsunset installation failed - checking for missing dependencies..."
+        pkg-config --exists hyprlang || echo "  - hyprlang might be missing"
+        pkg-config --exists hyprwayland-scanner || echo "  - hyprwayland-scanner might be missing"
     fi
 else
     echo "No CMakeLists.txt found for Hyprsunset"
@@ -299,6 +375,8 @@ fi
 cd "$GRAY_DIR"
 if [ -f "meson.build" ]; then
     echo "Building Gray with meson..."
+    # Clean previous build
+    rm -rf build
     if meson setup build --prefix=/usr --buildtype=release && \
        ninja -C build && \
        sudo ninja -C build install; then
@@ -319,22 +397,22 @@ mkdir -p "$NERD_FONTS_DIR"
 
 # Download font files
 echo "Downloading Nerd Fonts Symbols..."
-curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf"
-
-curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf"
-
-# Install fonts to user directory
-echo "Installing Nerd Fonts to user directory..."
-cp "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" "$HOME/.fonts/"
-cp "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" "$HOME/.fonts/"
+if curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf" && \
+   curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf"; then
+    # Install fonts to user directory
+    echo "Installing Nerd Fonts to user directory..."
+    cp "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" "$HOME/.fonts/"
+    cp "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" "$HOME/.fonts/"
+    echo "✅ Nerd Fonts Symbols have been installed to user directory."
+else
+    echo "⚠️  Failed to download Nerd Fonts, but continuing..."
+fi
 
 # Update font cache
 echo "Updating font cache..."
 fc-cache -fv
-
-echo "✅ Nerd Fonts Symbols have been installed to user directory."
 
 # --- Clone or update Ax-Shell ---
 echo "Setting up Ax-Shell..."
@@ -356,15 +434,16 @@ TEMP_ZIP="/tmp/zed-sans-1.2.0.zip"
 
 if [ ! -d "$FONT_DIR" ]; then
     echo "Downloading Zed Sans fonts..."
-    curl -L -o "$TEMP_ZIP" "$FONT_URL"
-
-    echo "Extracting fonts..."
-    mkdir -p "$FONT_DIR"
-    unzip -o "$TEMP_ZIP" -d "$FONT_DIR"
-
+    if curl -L -o "$TEMP_ZIP" "$FONT_URL"; then
+        echo "Extracting fonts..."
+        mkdir -p "$FONT_DIR"
+        unzip -o "$TEMP_ZIP" -d "$FONT_DIR"
+        echo "✅ Zed Sans fonts installed successfully"
+    else
+        echo "⚠️  Failed to download Zed Sans fonts"
+    fi
     echo "Cleaning up..."
-    rm "$TEMP_ZIP"
-    echo "✅ Zed Sans fonts installed successfully"
+    rm -f "$TEMP_ZIP"
 else
     echo "✅ Zed Sans fonts are already installed."
 fi
@@ -415,27 +494,24 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# Add Python user site to PATH if needed
-PYTHON_USER_BIN=$(python3 -m site --user-base)/bin
-if [ -d "$PYTHON_USER_BIN" ] && [[ ":$PATH:" != *":$PYTHON_USER_BIN:"* ]]; then
-    echo "Adding Python user bin to PATH in .bashrc..."
-    echo "export PATH=\"$PYTHON_USER_BIN:\$PATH\"" >> "$HOME/.bashrc"
-    export PATH="$PYTHON_USER_BIN:$PATH"
+# Add virtual environment activation to bashrc for easy ax-shell command
+if ! grep -q "ax-shell-venv" "$HOME/.bashrc"; then
+    echo "Adding ax-shell alias to .bashrc..."
+    echo "alias ax-shell='$VENV_DIR/bin/python $INSTALL_DIR/main.py'" >> "$HOME/.bashrc"
 fi
 
 # --- Update font cache again after all font installations ---
 echo "Updating font cache after all font installations..."
 fc-cache -fv
 
-# --- Install Python requirements for Ax-Shell ---
+# --- Install Python requirements for Ax-Shell in virtual environment ---
 echo "Installing Python requirements for Ax-Shell..."
 
 if [ -f "$INSTALL_DIR/requirements.txt" ]; then
     echo "Installing requirements from requirements.txt..."
-    pip3 install --user -r "$INSTALL_DIR/requirements.txt" || echo "Failed to install some Python requirements"
+    "$VENV_DIR/bin/pip" install -r "$INSTALL_DIR/requirements.txt" || echo "Failed to install some Python requirements"
 else
-    echo "No requirements.txt found, installing common dependencies..."
-    pip3 install --user psutil requests watchdog ijson toml setproctitle pywayland || echo "Failed to install some Python packages"
+    echo "No requirements.txt found, common dependencies already installed in virtual environment"
 fi
 
 # --- Final steps ---
@@ -460,13 +536,13 @@ if [ ! -d "$INSTALL_DIR" ]; then
     MISSING_COMPONENTS+=("Ax-Shell")
 fi
 
-# Check if Fabric is available
-if ! python3 -c "import fabric" 2>/dev/null; then
+# Check if Fabric is available in virtual environment
+if ! "$VENV_DIR/bin/python" -c "import fabric" 2>/dev/null; then
     MISSING_COMPONENTS+=("Fabric")
 fi
 
-# Check if fabric-cli is available
-if ! python3 -c "import fabric_cli" 2>/dev/null 2>&1; then
+# Check if fabric-cli is available in virtual environment
+if ! "$VENV_DIR/bin/python" -c "import fabric_cli" 2>/dev/null 2>&1; then
     MISSING_COMPONENTS+=("fabric-cli")
 fi
 
@@ -475,17 +551,22 @@ if ! command -v gray >/dev/null 2>&1; then
     MISSING_COMPONENTS+=("Gray")
 fi
 
+# Check if PyGObject is available in virtual environment
+if ! "$VENV_DIR/bin/python" -c "import gi; print('PyGObject OK')" 2>/dev/null; then
+    MISSING_COMPONENTS+=("PyGObject")
+fi
+
 if [ ${#MISSING_COMPONENTS[@]} -eq 0 ]; then
     echo "✅ All critical components installed successfully!"
 else
     echo "⚠️  The following components failed to install: ${MISSING_COMPONENTS[*]}"
 fi
 
-# Run Ax-Shell configuration
+# Run Ax-Shell configuration using virtual environment
 if [ -f "$INSTALL_DIR/config/config.py" ]; then
     echo "Running Ax-Shell configuration..."
     cd "$INSTALL_DIR"
-    if python3 "$INSTALL_DIR/config/config.py"; then
+    if "$VENV_DIR/bin/python" "config/config.py"; then
         echo "✅ Ax-Shell configuration completed successfully"
     else
         echo "❌ Configuration script failed"
@@ -499,15 +580,15 @@ fi
 echo "Stopping any existing Ax-Shell instances..."
 pkill -f "ax-shell" 2>/dev/null || true
 
-# Start Ax-Shell using uwsm as per dev's instructions
+# Start Ax-Shell using virtual environment
 echo "Starting Ax-Shell..."
 if command -v uwsm >/dev/null 2>&1; then
-    uwsm app -- python "$INSTALL_DIR/main.py" > /dev/null 2>&1 & disown
-    echo "✅ Ax-Shell started with uwsm"
+    uwsm app -- "$VENV_DIR/bin/python" "$INSTALL_DIR/main.py" > /dev/null 2>&1 & disown
+    echo "✅ Ax-Shell started with uwsm and virtual environment"
 else
-    # Fallback: start directly
-    python3 "$INSTALL_DIR/main.py" > /dev/null 2>&1 &
-    echo "✅ Ax-Shell started directly (uwsm not found)"
+    # Fallback: start directly with virtual environment
+    "$VENV_DIR/bin/python" "$INSTALL_DIR/main.py" > /dev/null 2>&1 &
+    echo "✅ Ax-Shell started directly with virtual environment (uwsm not found)"
 fi
 
 echo ""
@@ -516,27 +597,32 @@ echo "INSTALLATION COMPLETE!"
 echo "=============================================="
 echo ""
 echo "Ax-Shell (Quiet fork) has been installed to: $INSTALL_DIR"
+echo "Python virtual environment: $VENV_DIR"
 echo ""
 echo "Components status:"
 if command -v hyprpicker >/dev/null 2>&1; then echo "✅ Hyprpicker"; else echo "❌ Hyprpicker"; fi
 if [ -f "$HOME/.local/bin/hyprshot" ]; then echo "✅ Hyprshot"; else echo "❌ Hyprshot"; fi
 if command -v hyprsunset >/dev/null 2>&1; then echo "✅ Hyprsunset"; else echo "❌ Hyprsunset"; fi
-if python3 -c "import fabric" 2>/dev/null; then echo "✅ Fabric"; else echo "❌ Fabric"; fi
-if python3 -c "import fabric_cli" 2>/dev/null 2>&1; then echo "✅ fabric-cli"; else echo "❌ fabric-cli"; fi
+if "$VENV_DIR/bin/python" -c "import fabric" 2>/dev/null; then echo "✅ Fabric"; else echo "❌ Fabric"; fi
+if "$VENV_DIR/bin/python" -c "import fabric_cli" 2>/dev/null 2>&1; then echo "✅ fabric-cli"; else echo "❌ fabric-cli"; fi
 if command -v gray >/dev/null 2>&1; then echo "✅ Gray"; else echo "❌ Gray"; fi
+if "$VENV_DIR/bin/python" -c "import gi" 2>/dev/null; then echo "✅ PyGObject (built from source)"; else echo "❌ PyGObject"; fi
 echo "✅ Hypridle & Hyprlock"
 echo "✅ Nerd Fonts Symbols & Zed Sans fonts"
 echo "✅ Network configuration"
+echo "✅ Python virtual environment with all dependencies"
 echo ""
 echo "Next steps:"
 echo "1. Restart your terminal or run: source ~/.bashrc"
 echo "2. Ax-Shell should be running automatically"
-echo "3. Test components manually if needed:"
+echo "3. You can start Ax-Shell manually with: ax-shell"
+echo "4. Or manually with: $VENV_DIR/bin/python $INSTALL_DIR/main.py"
+echo "5. Test components:"
 echo "   - hyprshot --help"
 echo "   - hyprpicker --help"
-echo "   - python3 -c 'import fabric; print(\"Fabric OK\")'"
-echo "   - python3 -c 'import fabric_cli; print(\"fabric-cli OK\")'"
+echo "   - $VENV_DIR/bin/python -c 'import fabric; print(\"Fabric OK\")'"
+echo "   - $VENV_DIR/bin/python -c 'import gi; print(\"PyGObject OK\")'"
 echo ""
-echo "If any components failed, check the output above for errors."
+echo "If any components failed, check the output above for specific error messages."
 echo "Enjoy using Ax-Shell! 🚀"
 echo "=============================================="
