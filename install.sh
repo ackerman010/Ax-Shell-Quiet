@@ -60,13 +60,15 @@ PACKAGES=(
     libgtk-layer-shell-dev
     libwebkit2gtk-4.1-0
     gir1.2-webkit2-4.1
+    # Python GI packages (Debian names)
+    python3-gi
+    python3-gi-cairo
     # Python pip
     python3-pip
 )
 
-# Python packages for Ax-Shell (exactly as specified by dev)
+# Python packages for Ax-Shell (Debian package names)
 PYTHON_PACKAGES=(
-    python3-gobject
     python3-ijson
     python3-numpy
     python3-pil
@@ -102,6 +104,10 @@ BUILD_PACKAGES=(
     python3-wheel
     python3-build
     python3-installer
+    # PyGObject build dependencies
+    libgirepository1.0-dev
+    libcairo2-dev
+    python3-dev
 )
 
 # Fabric Python dependencies
@@ -139,6 +145,10 @@ mkdir -p "$HOME/.local/src"
 mkdir -p "$HOME/.local/bin"
 mkdir -p "$HOME/.fonts"
 mkdir -p "$HOME/.local/lib/python3.12/site-packages"
+
+# --- Install PyGObject via pip for better compatibility ---
+echo "Installing PyGObject via pip for better compatibility..."
+pip3 install --user pygobject
 
 # --- Install Fabric from Source (AUR-style) ---
 echo "Building and installing Fabric from source (AUR-style)..."
