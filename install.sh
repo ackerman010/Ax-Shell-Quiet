@@ -41,7 +41,8 @@ sudo apt install -y \
     libwayland-dev wayland-protocols libxkbcommon-dev \
     python3-setuptools python3-wheel python3-build python3-installer \
     libgirepository1.0-dev python3-dev libffi-dev gir1.2-glib-2.0 \
-    gir1.2-girepository-2.0 golang-go libpugixml-dev
+    gir1.2-girepository-2.0 golang-go libpugixml-dev \
+    libcvc0t64 gir1.2-cvc-1.0  # Added Cvc packages for audio support
 
 # Create necessary directories
 echo "Creating necessary directories..."
@@ -370,6 +371,25 @@ else
     git clone --depth=1 "$REPO_URL" "$INSTALL_DIR"
 fi
 
+# --- Apply Wayland Property Fix ---
+echo "Applying Wayland window property fix..."
+WAYLAND_FILE="$INSTALL_DIR/widgets/wayland.py"
+
+if [ -f "$WAYLAND_FILE" ]; then
+    # Create backup
+    cp "$WAYLAND_FILE" "$WAYLAND_FILE.backup"
+    
+    # Apply the fix for Layer enum properties
+    sed -i 's/default_value=Layer\.TOP/default_value=Layer.TOP.value/g' "$WAYLAND_FILE"
+    sed -i 's/default_value=Layer\.BOTTOM/default_value=Layer.BOTTOM.value/g' "$WAYLAND_FILE"
+    sed -i 's/default_value=Layer\.BACKGROUND/default_value=Layer.BACKGROUND.value/g' "$WAYLAND_FILE"
+    sed -i 's/default_value=Layer\.OVERLAY/default_value=Layer.OVERLAY.value/g' "$WAYLAND_FILE"
+    
+    echo "✅ Wayland property fix applied"
+else
+    echo "⚠️ Wayland file not found, skipping fix"
+fi
+
 # Copy Ax-Shell fonts if available
 if [ -d "$INSTALL_DIR/assets/fonts" ]; then
     echo "Copying Ax-Shell local fonts..."
@@ -425,6 +445,9 @@ command -v gray >/dev/null 2>&1 && echo "✅ Gray" || echo "❌ Gray"
 command -v fabric-cli >/dev/null 2>&1 && echo "✅ fabric-cli" || echo "❌ fabric-cli"
 "$VENV_DIR/bin/python" -c "import gi" 2>/dev/null && echo "✅ PyGObject" || echo "❌ PyGObject"
 "$VENV_DIR/bin/python" -c "from PIL import Image; print('PIL OK')" 2>/dev/null && echo "✅ PIL (Pillow)" || echo "❌ PIL (Pillow)"
+
+# Test Cvc library
+"$VENV_DIR/bin/python" -c "import gi; gi.require_version('Cvc', '1.0'); print('✅ Cvc library')" 2>/dev/null && echo "✅ Cvc library" || echo "❌ Cvc library"
 
 # Run configuration if available
 if [ -f "$INSTALL_DIR/config/config.py" ]; then
