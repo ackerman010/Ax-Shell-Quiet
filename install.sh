@@ -82,6 +82,44 @@ else
     echo "❌ hyprwayland-scanner installation failed"
 fi
 
+# --- Install hyprland-protocols from Source (AUR-style) ---
+echo "Installing hyprland-protocols from source..."
+
+HYPRLAND_PROTOCOLS_DIR="$HOME/.local/src/hyprland-protocols"
+if [ -d "$HYPRLAND_PROTOCOLS_DIR" ]; then
+    echo "Updating hyprland-protocols repository..."
+    cd "$HYPRLAND_PROTOCOLS_DIR" && git pull || true
+else
+    echo "Cloning hyprland-protocols repository..."
+    git clone --depth=1 https://github.com/hyprwm/hyprland-protocols.git "$HYPRLAND_PROTOCOLS_DIR"
+fi
+
+# Build and install hyprland-protocols (AUR-style)
+cd "$HYPRLAND_PROTOCOLS_DIR"
+
+# Get version info similar to AUR pkgver()
+HYPRLAND_PROTOCOLS_VERSION=$(git describe --long --tags --abbrev=7 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' || echo "0.4.0")
+echo "Building hyprland-protocols version: $HYPRLAND_PROTOCOLS_VERSION"
+
+# AUR-style build process with meson
+echo "Building hyprland-protocols with meson..."
+rm -rf build
+if meson setup build \
+    --prefix=/usr \
+    --libexecdir=lib \
+    --buildtype=plain && \
+   meson compile -C build && \
+   sudo meson install -C build; then
+    echo "✅ hyprland-protocols installed successfully"
+    
+    # Install license (AUR-style)
+    if [ -f "LICENSE" ]; then
+        sudo install -Dm644 LICENSE -t /usr/share/licenses/hyprland-protocols/
+    fi
+else
+    echo "❌ hyprland-protocols installation failed"
+fi
+
 # --- Create Python Virtual Environment ---
 echo "Setting up Python virtual environment..."
 if [ -d "$VENV_DIR" ]; then
@@ -113,7 +151,8 @@ echo "Installing Python packages in virtual environment..."
     loguru \
     click \
     cffi \
-    pycparser
+    pycparser \
+    pillow  # Added PIL for Image support
 
 echo "✅ Python dependencies installed"
 
@@ -199,6 +238,7 @@ if [ -f "CMakeLists.txt" ]; then
         echo "Checking for missing dependencies..."
         pkg-config --exists hyprwayland-scanner && echo "  - hyprwayland-scanner: found" || echo "  - hyprwayland-scanner: missing"
         pkg-config --exists hyprutils && echo "  - hyprutils: found" || echo "  - hyprutils: missing"
+        pkg-config --exists hyprland-protocols && echo "  - hyprland-protocols: found" || echo "  - hyprland-protocols: missing"
     fi
 else
     echo "❌ Hyprpicker: No CMakeLists.txt found"
@@ -219,7 +259,7 @@ cp "$HYPRSHOT_DIR/hyprshot" "$HOME/.local/bin/hyprshot"
 chmod +x "$HOME/.local/bin/hyprshot"
 echo "✅ Hyprshot installed"
 
-# --- Install Hyprsunset ---
+# --- Install Hyprsunset with better error handling ---
 echo "Installing Hyprsunset..."
 
 HYPRSUNSET_DIR="$HOME/.local/src/hyprsunset"
@@ -233,21 +273,31 @@ cd "$HYPRSUNSET_DIR"
 if [ -f "CMakeLists.txt" ]; then
     echo "Building Hyprsunset..."
     rm -rf build
+    
+    # First check if dependencies are available
+    echo "Checking Hyprsunset dependencies..."
+    pkg-config --exists hyprwayland-scanner && echo "  ✅ hyprwayland-scanner found" || echo "  ❌ hyprwayland-scanner missing"
+    pkg-config --exists hyprlang && echo "  ✅ hyprlang found" || echo "  ❌ hyprlang missing" 
+    pkg-config --exists hyprland-protocols && echo "  ✅ hyprland-protocols found" || echo "  ❌ hyprland-protocols missing"
+    
     if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
        cmake --build build -j$(nproc) && \
        sudo cmake --install build; then
         echo "✅ Hyprsunset installed"
     else
         echo "❌ Hyprsunset build failed"
-        echo "Checking for missing dependencies..."
-        pkg-config --exists hyprwayland-scanner && echo "  - hyprwayland-scanner: found" || echo "  - hyprwayland-scanner: missing"
-        pkg-config --exists hyprlang && echo "  - hyprlang: found" || echo "  - hyprlang: missing"
+        # Try alternative installation method
+        if [ -f "build/hyprsunset" ]; then
+            echo "Trying manual installation..."
+            sudo cp build/hyprsunset /usr/local/bin/
+            echo "✅ Hyprsunset installed manually"
+        fi
     fi
 else
     echo "❌ Hyprsunset: No CMakeLists.txt found"
 fi
 
-# --- Install Gray ---
+# --- Install Gray with better error handling ---
 echo "Installing Gray..."
 
 GRAY_DIR="$HOME/.local/src/gray"
@@ -267,6 +317,12 @@ if [ -f "meson.build" ]; then
         echo "✅ Gray installed"
     else
         echo "❌ Gray build failed"
+        # Try alternative installation method
+        if [ -f "build/gray" ]; then
+            echo "Trying manual installation..."
+            sudo cp build/gray /usr/local/bin/
+            echo "✅ Gray installed manually"
+        fi
     fi
 else
     echo "❌ Gray: No meson.build found"
@@ -343,10 +399,15 @@ fi
 
 # --- Install Ax-Shell requirements ---
 echo "Installing Ax-Shell specific requirements..."
+
+# First check if there's a requirements.txt in the updated Ax-Shell
 if [ -f "$INSTALL_DIR/requirements.txt" ]; then
+    echo "Installing requirements from requirements.txt..."
     "$VENV_DIR/bin/pip" install -r "$INSTALL_DIR/requirements.txt" || echo "⚠️ Some requirements failed to install"
 else
-    echo "No requirements.txt found, using default dependencies"
+    echo "No requirements.txt found, installing common Ax-Shell dependencies..."
+    # Install common dependencies that Ax-Shell might need
+    "$VENV_DIR/bin/pip" install pillow pygobject dbus-python || echo "⚠️ Some dependencies failed to install"
 fi
 
 # --- Final verification ---
@@ -355,6 +416,7 @@ echo "Final verification..."
 # Test critical components
 echo "Component status:"
 pkg-config --exists hyprwayland-scanner && echo "✅ hyprwayland-scanner" || echo "❌ hyprwayland-scanner"
+pkg-config --exists hyprland-protocols && echo "✅ hyprland-protocols" || echo "❌ hyprland-protocols"
 command -v hyprpicker >/dev/null 2>&1 && echo "✅ Hyprpicker" || echo "❌ Hyprpicker"
 [ -f "$HOME/.local/bin/hyprshot" ] && echo "✅ Hyprshot" || echo "❌ Hyprshot"
 command -v hyprsunset >/dev/null 2>&1 && echo "✅ Hyprsunset" || echo "❌ Hyprsunset"
@@ -362,6 +424,7 @@ command -v gray >/dev/null 2>&1 && echo "✅ Gray" || echo "❌ Gray"
 "$VENV_DIR/bin/python" -c "import fabric" 2>/dev/null && echo "✅ Fabric" || echo "❌ Fabric"
 command -v fabric-cli >/dev/null 2>&1 && echo "✅ fabric-cli" || echo "❌ fabric-cli"
 "$VENV_DIR/bin/python" -c "import gi" 2>/dev/null && echo "✅ PyGObject" || echo "❌ PyGObject"
+"$VENV_DIR/bin/python" -c "from PIL import Image; print('PIL OK')" 2>/dev/null && echo "✅ PIL (Pillow)" || echo "❌ PIL (Pillow)"
 
 # Run configuration if available
 if [ -f "$INSTALL_DIR/config/config.py" ]; then
@@ -371,6 +434,7 @@ if [ -f "$INSTALL_DIR/config/config.py" ]; then
         echo "✅ Ax-Shell configuration completed"
     else
         echo "⚠️ Ax-Shell configuration had issues"
+        echo "You may need to install missing dependencies manually"
     fi
 else
     echo "⚠️ Ax-Shell configuration script not found"
@@ -408,5 +472,7 @@ echo ""
 echo "🔧 Troubleshooting:"
 echo "   Check component status above"
 echo "   Missing components may need manual installation"
+echo "   For PIL issues: $VENV_DIR/bin/pip install pillow"
+echo "   For Gray issues: Check if valac and GTK3 dev packages are installed"
 echo ""
 echo "=============================================="
