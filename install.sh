@@ -60,16 +60,15 @@ PYTHON_PACKAGES=(
     python3-watchdog
 )
 
-# Build dependencies for Hyprland ecosystem
+# Build dependencies
 BUILD_PACKAGES=(
     cmake
     gcc
-    gdb
+    g++
     git
     meson
     ninja-build
     pkg-config
-    wayland
     wayland-protocols
     libwayland-dev
     libxkbcommon-dev
@@ -116,51 +115,63 @@ $PKG_MANAGER "${PYTHON_PACKAGES[@]}" || { echo "Some Python packages failed to i
 echo "Installing build dependencies..."
 $PKG_MANAGER "${BUILD_PACKAGES[@]}" || { echo "Some build packages failed to install. Continuing with script..."; }
 
-# --- Install Hyprland Dependencies from Source ---
+# --- Install Nerd Fonts Symbols from Source ---
+echo "Installing Nerd Fonts Symbols..."
 
-# Install hyprutils from source (required by hyprsunset)
-echo "Installing hyprutils from source..."
+NERD_FONTS_VERSION="3.4.0"
+NERD_FONTS_DIR="$HOME/.local/src/nerd-fonts-symbols"
+mkdir -p "$NERD_FONTS_DIR"
 
-HYPRUTILS_DIR="$HOME/.local/src/hyprutils"
-mkdir -p "$(dirname "$HYPRUTILS_DIR")"
-if [ -d "$HYPRUTILS_DIR" ]; then
-    echo "Updating hyprutils repository..."
-    git -C "$HYPRUTILS_DIR" pull
-else
-    echo "Cloning hyprutils repository..."
-    git clone --depth=1 https://github.com/hyprwm/hyprutils.git "$HYPRUTILS_DIR"
+# Download font files and configuration
+echo "Downloading Nerd Fonts Symbols..."
+curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf"
+
+curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf"
+
+curl -L -o "$NERD_FONTS_DIR/10-nerd-font-symbols.conf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/10-nerd-font-symbols.conf"
+
+curl -L -o "$NERD_FONTS_DIR/LICENSE" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/LICENSE"
+
+# Create font directories
+echo "Installing Nerd Fonts to system..."
+sudo mkdir -p /usr/share/fonts/TTF
+sudo mkdir -p /usr/share/fontconfig/conf.avail
+sudo mkdir -p /usr/share/licenses/ttf-nerd-fonts-symbols-common
+
+# Install the fonts
+sudo install -Dm644 "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
+    /usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf
+
+sudo install -Dm644 "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
+    /usr/share/fonts/TTF/SymbolsNerdFontMono-Regular.ttf
+
+# Install fontconfig configuration
+sudo install -Dm644 "$NERD_FONTS_DIR/10-nerd-font-symbols.conf" \
+    /usr/share/fontconfig/conf.avail/10-nerd-font-symbols.conf
+
+# Install license
+sudo install -Dm644 "$NERD_FONTS_DIR/LICENSE" \
+    /usr/share/licenses/ttf-nerd-fonts-symbols-common/LICENSE
+
+# Create symlink for fontconfig
+if [ ! -f /etc/fonts/conf.d/10-nerd-font-symbols.conf ]; then
+    sudo ln -sf /usr/share/fontconfig/conf.avail/10-nerd-font-symbols.conf \
+        /etc/fonts/conf.d/10-nerd-font-symbols.conf
 fi
 
-# Build and install hyprutils
-cd "$HYPRUTILS_DIR"
-cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr -S . -B ./build
-cmake --build ./build --config Release --target all
-sudo cmake --install build
+# Update font cache
+echo "Updating font cache..."
+sudo fc-cache -fv
 
-echo "hyprutils has been installed from source."
+echo "Nerd Fonts Symbols have been installed successfully."
 
-# Install hyprwayland-scanner from source
-echo "Installing hyprwayland-scanner from source..."
+# --- Install missing Hyprland components from Source ---
 
-HYPRWAYLAND_SCANNER_DIR="$HOME/.local/src/hyprwayland-scanner"
-mkdir -p "$(dirname "$HYPRWAYLAND_SCANNER_DIR")"
-if [ -d "$HYPRWAYLAND_SCANNER_DIR" ]; then
-    echo "Updating hyprwayland-scanner repository..."
-    git -C "$HYPRWAYLAND_SCANNER_DIR" pull
-else
-    echo "Cloning hyprwayland-scanner repository..."
-    git clone --depth=1 https://github.com/hyprwm/hyprwayland-scanner.git "$HYPRWAYLAND_SCANNER_DIR"
-fi
-
-# Build and install hyprwayland-scanner
-cd "$HYPRWAYLAND_SCANNER_DIR"
-cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr -S . -B ./build
-cmake --build ./build --config Release --target all
-sudo cmake --install build
-
-echo "hyprwayland-scanner has been installed from source."
-
-# --- Install Hyprpicker from Source (since not available in repos) ---
+# Install hyprpicker from source (not available in repos)
 echo "Installing Hyprpicker from source..."
 
 HYPRPICKER_DIR="$HOME/.local/src/hyprpicker"
@@ -175,9 +186,8 @@ fi
 
 # Build and install Hyprpicker
 cd "$HYPRPICKER_DIR"
-cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr -S . -B ./build
-cmake --build ./build --config Release --target all
-sudo cmake --install build
+make all
+sudo make install
 
 echo "Hyprpicker has been installed from source."
 
@@ -216,8 +226,8 @@ fi
 
 # Build and install Hyprsunset using CMake
 cd "$HYPRSUNSET_DIR"
-cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr -S . -B ./build
-cmake --build ./build --config Release --target hyprsunset
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 sudo cmake --install build
 
 echo "Hyprsunset has been installed from source."
@@ -241,10 +251,6 @@ meson setup --prefix=/usr build .
 sudo ninja -C build install
 
 echo "Gray has been installed from source."
-
-# Note about Nerd Fonts
-echo "Note: ttf-nerd-fonts-symbols-mono is not available in PikaOS repositories."
-echo "You may need to manually install Nerd Fonts from their official website or GitHub repository."
 
 # Clone or update the Ax-Shell repository (using user's fork)
 if [ -d "$INSTALL_DIR" ]; then
@@ -331,4 +337,5 @@ python3 "$INSTALL_DIR/main.py" > /dev/null 2>&1 & disown
 
 echo "Installation complete!"
 echo "Ax-Shell (Quiet fork) has been successfully installed from $REPO_URL"
+echo "Nerd Fonts Symbols have been installed system-wide"
 echo "Note: Some components were installed in ~/.local/bin - make sure this is in your PATH."
