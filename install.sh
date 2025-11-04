@@ -1,7 +1,6 @@
 #!/bin/bash
 
 set -e  # Exit immediately if a command fails
-# Removed set -u to avoid unbound variable issues
 set -o pipefail  # Prevent errors in a pipeline from being masked
 
 REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
@@ -18,14 +17,13 @@ sudo apt update
 # Install essential packages in one go
 echo "Installing all required packages..."
 sudo apt install -y \
-    brightnessctl cava cliphist libgnome-bluetooth-3.0-13 \
+    brightnessctl cava cliphist \
     gobject-introspection gpu-screen-recorder hypridle hyprlock \
     libnotify-bin matugen network-manager-applet nm-connection-editor \
-    fonts-noto fonts-noto-core fonts-noto-extra fonts-noto-ui-core \
-    fonts-noto-unhinted fonts-noto-color-emoji fonts-noto-mono \
+    fonts-noto fonts-noto-color-emoji fonts-noto-mono \
     nvtop playerctl power-profiles-daemon swappy swww \
     tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa \
-    tmux unzip upower libvte-2.91-0 gir1.2-vte-2.91 \
+    tmux unzip upower \
     webp-pixbuf-loader wl-clipboard jq grim slurp \
     libhyprlang-dev libhyprutils-dev hyprwayland-scanner \
     imagemagick libdbusmenu-gtk3-dev libgtk-layer-shell0 \
@@ -38,11 +36,12 @@ sudo apt install -y \
     libgtk-3-dev libcairo2-dev libpango1.0-dev libjpeg-dev \
     libwayland-dev wayland-protocols libxkbcommon-dev \
     python3-setuptools python3-wheel python3-build python3-installer \
-    libgirepository1.0-dev python3-dev libffi-dev gir1.2-glib-2.0
+    libgirepository1.0-dev python3-dev libffi-dev gir1.2-glib-2.0 \
+    gir1.2-girepository-2.0
 
 # Create necessary directories
 echo "Creating necessary directories..."
-mkdir -p "$HOME/.local/src" "$HOME/.local/bin" "$HOME/.fonts"
+mkdir -p "$HOME/.local/src" "$HOME/.local/bin" "$HOME/.local/share/fonts"
 
 # --- Create Python Virtual Environment ---
 echo "Setting up Python virtual environment..."
@@ -51,7 +50,7 @@ if [ -d "$VENV_DIR" ]; then
     rm -rf "$VENV_DIR"
 fi
 
-python3 -m venv "$VENV_DIR"
+python3 -m venv "$VENV_DIR" --system-site-packages
 source "$VENV_DIR/bin/activate"
 
 echo "✅ Virtual environment created at $VENV_DIR"
@@ -64,7 +63,6 @@ echo "Installing Python packages in virtual environment..."
 
 # Install all Python dependencies at once
 "$VENV_DIR/bin/pip" install \
-    pygobject \
     psutil \
     requests \
     watchdog \
@@ -127,12 +125,15 @@ cd "$HYPRPICKER_DIR"
 if [ -f "CMakeLists.txt" ]; then
     echo "Building Hyprpicker..."
     rm -rf build
-    cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-    cmake --build build -j$(nproc)
-    sudo cmake --install build
-    echo "✅ Hyprpicker installed"
+    if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
+       cmake --build build -j$(nproc) && \
+       sudo cmake --install build; then
+        echo "✅ Hyprpicker installed"
+    else
+        echo "❌ Hyprpicker build failed"
+    fi
 else
-    echo "❌ Hyprpicker build failed"
+    echo "❌ Hyprpicker: No CMakeLists.txt found"
 fi
 
 # --- Install Hyprshot ---
@@ -145,6 +146,7 @@ else
     git clone --depth=1 https://github.com/Gustash/Hyprshot.git "$HYPRSHOT_DIR"
 fi
 
+mkdir -p "$HOME/.local/bin"
 cp "$HYPRSHOT_DIR/hyprshot" "$HOME/.local/bin/hyprshot"
 chmod +x "$HOME/.local/bin/hyprshot"
 echo "✅ Hyprshot installed"
@@ -163,12 +165,15 @@ cd "$HYPRSUNSET_DIR"
 if [ -f "CMakeLists.txt" ]; then
     echo "Building Hyprsunset..."
     rm -rf build
-    cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-    cmake --build build -j$(nproc)
-    sudo cmake --install build
-    echo "✅ Hyprsunset installed"
+    if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
+       cmake --build build -j$(nproc) && \
+       sudo cmake --install build; then
+        echo "✅ Hyprsunset installed"
+    else
+        echo "❌ Hyprsunset build failed"
+    fi
 else
-    echo "❌ Hyprsunset build failed"
+    echo "❌ Hyprsunset: No CMakeLists.txt found"
 fi
 
 # --- Install Gray ---
@@ -185,76 +190,103 @@ cd "$GRAY_DIR"
 if [ -f "meson.build" ]; then
     echo "Building Gray..."
     rm -rf build
-    meson setup build --prefix=/usr --buildtype=release
-    ninja -C build
-    sudo ninja -C build install
-    echo "✅ Gray installed"
+    if meson setup build --prefix=/usr --buildtype=release && \
+       ninja -C build && \
+       sudo ninja -C build install; then
+        echo "✅ Gray installed"
+    else
+        echo "❌ Gray build failed"
+    fi
 else
-    echo "❌ Gray build failed"
+    echo "❌ Gray: No meson.build found"
 fi
 
 # --- Install Fonts ---
 echo "Installing fonts..."
 
 # Nerd Fonts
-mkdir -p "$HOME/.local/src/nerd-fonts"
-curl -L -o "$HOME/.fonts/SymbolsNerdFont-Regular.ttf" \
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.4.0/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf" || true
-curl -L -o "$HOME/.fonts/SymbolsNerdFontMono-Regular.ttf" \
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.4.0/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf" || true
+echo "Installing Nerd Fonts..."
+curl -L -o "$HOME/.local/share/fonts/SymbolsNerdFont-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.4.0/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf" 2>/dev/null || echo "⚠️ Failed to download SymbolsNerdFont-Regular"
+
+curl -L -o "$HOME/.local/share/fonts/SymbolsNerdFontMono-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.4.0/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf" 2>/dev/null || echo "⚠️ Failed to download SymbolsNerdFontMono"
 
 # Zed Sans Fonts
-if [ ! -d "$HOME/.fonts/zed-sans" ]; then
-    mkdir -p "$HOME/.fonts/zed-sans"
-    curl -L -o "/tmp/zed-sans.zip" \
-        "https://github.com/zed-industries/zed-fonts/releases/download/1.2.0/zed-sans-1.2.0.zip" && \
-    unzip -o "/tmp/zed-sans.zip" -d "$HOME/.fonts/zed-sans" || true
-    rm -f "/tmp/zed-sans.zip"
+echo "Installing Zed Sans fonts..."
+if [ ! -d "$HOME/.local/share/fonts/zed-sans" ]; then
+    mkdir -p "$HOME/.local/share/fonts/zed-sans"
+    if curl -L -o "/tmp/zed-sans.zip" \
+        "https://github.com/zed-industries/zed-fonts/releases/download/1.2.0/zed-sans-1.2.0.zip"; then
+        unzip -q -o "/tmp/zed-sans.zip" -d "$HOME/.local/share/fonts/zed-sans"
+        rm -f "/tmp/zed-sans.zip"
+        echo "✅ Zed Sans fonts installed"
+    else
+        echo "⚠️ Failed to download Zed Sans fonts"
+    fi
+else
+    echo "✅ Zed Sans fonts already installed"
 fi
 
+# Update font cache
 fc-cache -fv
-echo "✅ Fonts installed"
+echo "✅ Fonts installation completed"
 
 # --- Clone Ax-Shell ---
 echo "Setting up Ax-Shell..."
 
 if [ -d "$INSTALL_DIR" ]; then
-    cd "$INSTALL_DIR" && git pull || true
+    echo "Updating existing Ax-Shell installation..."
+    cd "$INSTALL_DIR" && git pull || echo "⚠️ Git pull failed, using existing code"
 else
+    echo "Cloning Ax-Shell..."
     git clone --depth=1 "$REPO_URL" "$INSTALL_DIR"
 fi
 
 # Copy Ax-Shell fonts if available
 if [ -d "$INSTALL_DIR/assets/fonts" ]; then
-    cp -r "$INSTALL_DIR/assets/fonts/"* "$HOME/.fonts/" 2>/dev/null || true
+    echo "Copying Ax-Shell local fonts..."
+    mkdir -p "$HOME/.local/share/fonts/tabler-icons"
+    cp -r "$INSTALL_DIR/assets/fonts/"* "$HOME/.local/share/fonts/" 2>/dev/null || echo "⚠️ Some fonts could not be copied"
 fi
 
 # --- Network configuration ---
-echo "Configuring network..."
-sudo systemctl disable iwd 2>/dev/null || true
-sudo systemctl enable NetworkManager 2>/dev/null || true
-sudo systemctl start NetworkManager 2>/dev/null || true
+echo "Configuring network services..."
+sudo systemctl disable iwd 2>/dev/null || echo "✅ iwd not present or already disabled"
+sudo systemctl enable NetworkManager 2>/dev/null || echo "✅ NetworkManager already enabled"
+sudo systemctl start NetworkManager 2>/dev/null || echo "✅ NetworkManager already running"
 
-# --- Update PATH ---
-if ! grep -q ".local/bin" "$HOME/.bashrc"; then
+# --- Update PATH and create aliases ---
+echo "Setting up environment..."
+
+# Add ~/.local/bin to PATH if not already there
+if ! grep -q "\.local/bin" "$HOME/.bashrc"; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
 fi
+export PATH="$HOME/.local/bin:$PATH"
 
-if ! grep -q "ax-shell-venv" "$HOME/.bashrc"; then
+# Add ax-shell alias
+if ! grep -q "ax-shell" "$HOME/.bashrc"; then
     echo "alias ax-shell='$VENV_DIR/bin/python $INSTALL_DIR/main.py'" >> "$HOME/.bashrc"
 fi
 
-export PATH="$HOME/.local/bin:$PATH"
+# --- Install Ax-Shell requirements ---
+echo "Installing Ax-Shell specific requirements..."
+if [ -f "$INSTALL_DIR/requirements.txt" ]; then
+    "$VENV_DIR/bin/pip" install -r "$INSTALL_DIR/requirements.txt" || echo "⚠️ Some requirements failed to install"
+else
+    echo "No requirements.txt found, using default dependencies"
+fi
 
-# --- Final setup ---
-echo "Finalizing installation..."
+# --- Final verification ---
+echo "Final verification..."
 
-# Verify installation
-echo "Checking installed components:"
-command -v hyprpicker >/dev/null && echo "✅ Hyprpicker" || echo "❌ Hyprpicker"
+# Test critical components
+echo "Component status:"
+command -v hyprpicker >/dev/null 2>&1 && echo "✅ Hyprpicker" || echo "❌ Hyprpicker"
 [ -f "$HOME/.local/bin/hyprshot" ] && echo "✅ Hyprshot" || echo "❌ Hyprshot"
-command -v hyprsunset >/dev/null && echo "✅ Hyprsunset" || echo "❌ Hyprsunset"
-command -v gray >/dev/null && echo "✅ Gray" || echo "❌ Gray"
+command -v hyprsunset >/dev/null 2>&1 && echo "✅ Hyprsunset" || echo "❌ Hyprsunset"
+command -v gray >/dev/null 2>&1 && echo "✅ Gray" || echo "❌ Gray"
 "$VENV_DIR/bin/python" -c "import fabric" 2>/dev/null && echo "✅ Fabric" || echo "❌ Fabric"
 "$VENV_DIR/bin/python" -c "import fabric_cli" 2>/dev/null && echo "✅ fabric-cli" || echo "❌ fabric-cli"
 "$VENV_DIR/bin/python" -c "import gi" 2>/dev/null && echo "✅ PyGObject" || echo "❌ PyGObject"
@@ -263,27 +295,46 @@ command -v gray >/dev/null && echo "✅ Gray" || echo "❌ Gray"
 if [ -f "$INSTALL_DIR/config/config.py" ]; then
     echo "Running Ax-Shell configuration..."
     cd "$INSTALL_DIR"
-    "$VENV_DIR/bin/python" "config/config.py" || echo "Configuration had issues"
+    if "$VENV_DIR/bin/python" "config/config.py"; then
+        echo "✅ Ax-Shell configuration completed"
+    else
+        echo "⚠️ Ax-Shell configuration had issues"
+    fi
+else
+    echo "⚠️ Ax-Shell configuration script not found"
 fi
 
 # Start Ax-Shell
 echo "Starting Ax-Shell..."
 pkill -f "ax-shell" 2>/dev/null || true
 
-if command -v uwsm >/dev/null; then
+if command -v uwsm >/dev/null 2>&1; then
     uwsm app -- "$VENV_DIR/bin/python" "$INSTALL_DIR/main.py" > /dev/null 2>&1 & disown
+    echo "✅ Ax-Shell started with uwsm"
 else
     "$VENV_DIR/bin/python" "$INSTALL_DIR/main.py" > /dev/null 2>&1 &
+    echo "✅ Ax-Shell started directly"
 fi
 
 echo ""
 echo "=============================================="
-echo "INSTALLATION COMPLETE!"
+echo "🎉 INSTALLATION COMPLETE!"
 echo "=============================================="
 echo ""
 echo "Ax-Shell is now running!"
-echo "Manual start: ax-shell"
-echo "Virtual env: $VENV_DIR"
 echo ""
-echo "Restart terminal or run: source ~/.bashrc"
+echo "📍 Important locations:"
+echo "   Config: $INSTALL_DIR"
+echo "   Virtual Env: $VENV_DIR"
+echo "   Fonts: $HOME/.local/share/fonts"
+echo ""
+echo "🚀 Quick start:"
+echo "   Restart terminal or run: source ~/.bashrc"
+echo "   Start manually: ax-shell"
+echo "   Or: $VENV_DIR/bin/python $INSTALL_DIR/main.py"
+echo ""
+echo "🔧 Troubleshooting:"
+echo "   Check component status above"
+echo "   Missing components may need manual installation"
+echo ""
 echo "=============================================="
