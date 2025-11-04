@@ -101,7 +101,7 @@ else
     git clone --depth=1 "$REPO_URL" "$INSTALL_DIR"
 fi
 
-# Install uwsm (Wayland session manager) from source
+# Install uwsm
 echo "Installing uwsm from source..."
 UWSM_DIR="$HOME/.local/src/uwsm"
 if [ -d "$UWSM_DIR" ]; then
@@ -159,7 +159,7 @@ else
     echo "✅ Zed Sans fonts already installed"
 fi
 
-# Copy Ax-Shell fonts if available
+# Copy Ax-Shell fonts
 if [ -d "$INSTALL_DIR/assets/fonts" ]; then
     echo "Copying Ax-Shell local fonts..."
     mkdir -p "$HOME/.local/share/fonts/tabler-icons"
@@ -170,7 +170,7 @@ fi
 fc-cache -fv
 echo "✅ Fonts installation completed"
 
-# --- PYTHON CODE FIXES (Crucial for launch) ---
+# PYTHON
 echo "Applying Python import fixes to Ax-Shell source files..."
 
 fix_python_imports \
@@ -183,7 +183,6 @@ fix_python_imports \
     "$INSTALL_DIR/modules/buttons.py" \
     "from services.network import NetworkClient" \
     15
-# --- END PYTHON CODE FIXES ---
 
 
 # Network services handling
@@ -227,7 +226,7 @@ echo "Running Ax-Shell configuration..."
 cd "$INSTALL_DIR"
 python3 config/config.py
 
-# Start Ax-Shell with uwsm (the proper way)
+# Start Ax-Shell
 echo "Starting Ax-Shell..."
 pkill -f "ax-shell" 2>/dev/null || true
 uwsm app -- python3 "$INSTALL_DIR/main.py" > /dev/null 2>&1 &
