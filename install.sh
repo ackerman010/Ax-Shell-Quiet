@@ -199,6 +199,7 @@ if [ -f "meson.build" ]; then
         echo "❌ fabric-cli build failed"
         # Try alternative: check if there's a built binary
         if [ -f "build/fabric-cli" ]; then
+            echo "Trying manual installation..."
             sudo cp build/fabric-cli /usr/local/bin/
             echo "✅ fabric-cli installed manually"
         fi
@@ -298,7 +299,7 @@ else
     echo "❌ Hyprsunset: No CMakeLists.txt found"
 fi
 
-# --- Install Gray with better error handling ---
+# --- Install Gray with IMPROVED error handling ---
 echo "Installing Gray..."
 
 GRAY_DIR="$HOME/.local/src/gray"
@@ -312,21 +313,48 @@ cd "$GRAY_DIR"
 if [ -f "meson.build" ]; then
     echo "Building Gray..."
     rm -rf build
+    
+    # Check for valac and dependencies
+    echo "Checking Gray dependencies..."
+    command -v valac >/dev/null 2>&1 && echo "  ✅ valac found" || echo "  ❌ valac missing"
+    pkg-config --exists gtk+-3.0 && echo "  ✅ gtk+-3.0 found" || echo "  ❌ gtk+-3.0 missing"
+    pkg-config --exists glib-2.0 && echo "  ✅ glib-2.0 found" || echo "  ❌ glib-2.0 missing"
+    
     if meson setup build --prefix=/usr --buildtype=release && \
-       ninja -C build && \
-       sudo ninja -C build install; then
-        echo "✅ Gray installed"
+       ninja -C build; then
+        # Try to install, if it fails, install manually
+        if sudo ninja -C build install; then
+            echo "✅ Gray installed via ninja"
+        else
+            echo "⚠️ Ninja install failed, trying manual installation..."
+            if [ -f "build/gray" ]; then
+                sudo cp build/gray /usr/local/bin/
+                echo "✅ Gray installed manually to /usr/local/bin/"
+            else
+                echo "❌ Gray binary not found in build directory"
+            fi
+        fi
     else
         echo "❌ Gray build failed"
-        # Try alternative installation method
-        if [ -f "build/gray" ]; then
-            echo "Trying manual installation..."
-            sudo cp build/gray /usr/local/bin/
-            echo "✅ Gray installed manually"
+        # Try alternative: check if there's a pre-built binary or different build system
+        if [ -f "gray" ]; then
+            echo "Found pre-built gray binary..."
+            sudo cp gray /usr/local/bin/
+            echo "✅ Gray installed from pre-built binary"
         fi
     fi
 else
     echo "❌ Gray: No meson.build found"
+    # Check for alternative build methods
+    if [ -f "Makefile" ]; then
+        echo "Building Gray with make..."
+        make && sudo make install && echo "✅ Gray installed via make"
+    elif [ -f "gray.c" ]; then
+        echo "Building Gray from C source..."
+        gcc -o gray gray.c `pkg-config --cflags --libs gtk+-3.0` && \
+        sudo cp gray /usr/local/bin/ && \
+        echo "✅ Gray installed from C source"
+    fi
 fi
 
 # --- Install Fonts ---
@@ -388,6 +416,22 @@ if [ -f "$WAYLAND_FILE" ]; then
     echo "✅ Wayland property fix applied"
 else
     echo "⚠️ Wayland file not found, skipping fix"
+fi
+
+# --- Fix GTK Markup Ampersand Issue ---
+echo "Fixing GTK markup ampersand issue..."
+CONFIG_FILE="$INSTALL_DIR/config/config.py"
+
+if [ -f "$CONFIG_FILE" ]; then
+    # Create backup
+    cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
+    
+    # Fix the ampersand in the Date & Time Format string
+    sed -i 's/<b>Date & Time Format<\/b>/<b>Date \&amp; Time Format<\/b>/g' "$CONFIG_FILE"
+    
+    echo "✅ GTK markup ampersand fix applied"
+else
+    echo "⚠️ Config file not found, skipping GTK markup fix"
 fi
 
 # Copy Ax-Shell fonts if available
@@ -493,9 +537,8 @@ echo "   Start manually: ax-shell"
 echo "   Or: $VENV_DIR/bin/python $INSTALL_DIR/main.py"
 echo ""
 echo "🔧 Troubleshooting:"
-echo "   Check component status above"
-echo "   Missing components may need manual installation"
-echo "   For PIL issues: $VENV_DIR/bin/pip install pillow"
-echo "   For Gray issues: Check if valac and GTK3 dev packages are installed"
+echo "   - Gray failed: This is a color picker tool, Ax-Shell should work without it"
+echo "   - For PIL issues: $VENV_DIR/bin/pip install pillow"
+echo "   - For GTK issues: Check if all GTK3 dev packages are installed"
 echo ""
 echo "=============================================="
