@@ -1,12 +1,12 @@
 #!/bin/bash
 
-set -e # Exit immediately if a command fails
-set -o pipefail # Prevent errors in a pipeline from being masked
+set -e 
+set -o pipefail
 
 REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
 INSTALL_DIR="$HOME/.config/Ax-Shell"
 
-# --- FIX FUNCTIONS ---
+# FIX FUNCTIONS
 fix_python_imports() {
     local file_path="$1"
     local import_line="$2"
@@ -19,7 +19,6 @@ fix_python_imports() {
 
     echo "⚙️ Fixing imports in $file_path..."
     
-    # Check if the line already exists
     if grep -qF -- "$import_line" "$file_path"; then
         echo "✅ Import '$import_line' already present in $file_path."
         return
@@ -51,7 +50,6 @@ fix_python_imports() {
         echo "✅ Added '$import_line' to $file_path."
     fi
 }
-# --------------------
 
 echo "Starting Ax-Shell installation for PikaOS..."
 echo "=============================================="
@@ -120,7 +118,7 @@ meson compile -C build
 sudo meson install -C build
 echo "✅ uwsm installed"
 
-# --- FABRIC CLEANUP AND INSTALLATION FIX (Crucial for PyGObject) ---
+# FABRIC INSTALLATION
 echo "Cleaning up conflicting user-installed Python packages..."
 /usr/bin/env python3 -m pip uninstall -y fabric PyGObject pycairo --break-system-packages 2>/dev/null || true
 
@@ -128,10 +126,9 @@ echo "Installing Fabric GUI framework using --break-system-packages and skipping
 
 /usr/bin/env python3 -m pip install --break-system-packages --no-deps --no-cache-dir git+https://github.com/Fabric-Development/fabric.git
 echo "✅ Fabric installed"
-# --- END FABRIC FIX ---
 
 
-# Install Hyprshot (simple copy)
+# Install Hyprshot
 echo "Installing Hyprshot..."
 HYPRSHOT_DIR="$HOME/.local/src/hyprshot"
 if [ -d "$HYPRSHOT_DIR" ]; then
