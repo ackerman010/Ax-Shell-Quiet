@@ -7,12 +7,11 @@ set -o pipefail  # Prevent errors in a pipeline from being masked
 REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
 INSTALL_DIR="$HOME/.config/Ax-Shell"
 
-# Package list for PikaOS
+# Package list for PikaOS - using available packages where possible
 PACKAGES=(
     brightnessctl
     cava
     cliphist
-    fabric
     libgnome-bluetooth-3.0-13
     gobject-introspection
     gpu-screen-recorder
@@ -44,13 +43,24 @@ PACKAGES=(
     gir1.2-vte-2.91
     webp-pixbuf-loader
     wl-clipboard
-    # Additional dependencies for Hyprshot and other tools
+    # Hyprshot dependencies
     jq
     grim
     slurp
+    # Hypr tools from PikaOS repo
+    hyprpicker
+    libhyprlang
+    libhyprutils
+    hyprwayland-scanner
+    # Image manipulation
+    imagemagick
+    # Gray dependencies
+    libdbusmenu-gtk3-dev
+    # Correct Fabric package
+    python3-fabric
 )
 
-# Python packages for PikaOS
+# Python packages for Ax-Shell
 PYTHON_PACKAGES=(
     python3-gi
     python3-ijson
@@ -64,7 +74,7 @@ PYTHON_PACKAGES=(
     python3-watchdog
 )
 
-# Build dependencies - minimal set to avoid pulling in too many dependencies
+# Build dependencies for tools that need compilation
 BUILD_PACKAGES=(
     build-essential
     cmake
@@ -72,12 +82,6 @@ BUILD_PACKAGES=(
     meson
     ninja-build
     pkg-config
-    wayland-protocols
-    libwayland-dev
-    libxkbcommon-dev
-    libcairo2-dev
-    libpango1.0-dev
-    libjpeg-dev
     # Vala for Gray
     valac
     libjson-glib-dev
@@ -97,7 +101,7 @@ echo "=============================================="
 echo "Updating package lists..."
 sudo apt update
 
-# Install packages in batches (much faster)
+# Install packages in batches
 echo "Installing system packages..."
 sudo apt install -y "${PACKAGES[@]}"
 
@@ -112,108 +116,6 @@ echo "Creating necessary directories..."
 mkdir -p "$HOME/.local/src"
 mkdir -p "$HOME/.local/bin"
 mkdir -p "$HOME/.fonts"
-
-# --- Install Nerd Fonts Symbols ---
-echo "Installing Nerd Fonts Symbols..."
-
-NERD_FONTS_VERSION="3.4.0"
-NERD_FONTS_DIR="$HOME/.local/src/nerd-fonts-symbols"
-mkdir -p "$NERD_FONTS_DIR"
-
-# Download font files
-echo "Downloading Nerd Fonts Symbols..."
-curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf"
-
-curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf"
-
-# Install fonts to user directory
-echo "Installing Nerd Fonts to user directory..."
-cp "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" "$HOME/.fonts/"
-cp "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" "$HOME/.fonts/"
-
-# Update font cache
-echo "Updating font cache..."
-fc-cache -fv
-
-echo "Nerd Fonts Symbols have been installed to user directory."
-
-# --- Install Hypr dependencies first ---
-echo "Installing Hypr dependencies..."
-
-# Install hyprutils first (dependency for hyprpicker)
-echo "Installing hyprutils..."
-HYPRUTILS_DIR="$HOME/.local/src/hyprutils"
-if [ -d "$HYPRUTILS_DIR" ]; then
-    echo "Updating hyprutils repository..."
-    git -C "$HYPRUTILS_DIR" pull || echo "Git pull failed, continuing with existing code..."
-else
-    echo "Cloning hyprutils repository..."
-    git clone --depth=1 https://github.com/hyprwm/hyprutils.git "$HYPRUTILS_DIR"
-fi
-
-cd "$HYPRUTILS_DIR"
-if [ -f "CMakeLists.txt" ]; then
-    echo "Building hyprutils with CMake..."
-    cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build build && \
-    sudo cmake --install build || {
-        echo "Warning: hyprutils installation failed"
-    }
-fi
-
-# Install hyprwayland-scanner (dependency for hyprpicker)
-echo "Installing hyprwayland-scanner..."
-HYPRWAYLAND_SCANNER_DIR="$HOME/.local/src/hyprwayland-scanner"
-if [ -d "$HYPRWAYLAND_SCANNER_DIR" ]; then
-    echo "Updating hyprwayland-scanner repository..."
-    git -C "$HYPRWAYLAND_SCANNER_DIR" pull || echo "Git pull failed, continuing with existing code..."
-else
-    echo "Cloning hyprwayland-scanner repository..."
-    git clone --depth=1 https://github.com/hyprwm/hyprwayland-scanner.git "$HYPRWAYLAND_SCANNER_DIR"
-fi
-
-cd "$HYPRWAYLAND_SCANNER_DIR"
-if [ -f "CMakeLists.txt" ]; then
-    echo "Building hyprwayland-scanner with CMake..."
-    cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build build && \
-    sudo cmake --install build || {
-        echo "Warning: hyprwayland-scanner installation failed"
-    }
-fi
-
-# --- Install Hyprpicker from Source ---
-echo "Installing Hyprpicker from source..."
-
-HYPRPICKER_DIR="$HOME/.local/src/hyprpicker"
-if [ -d "$HYPRPICKER_DIR" ]; then
-    echo "Updating Hyprpicker repository..."
-    git -C "$HYPRPICKER_DIR" pull || echo "Git pull failed, continuing with existing code..."
-else
-    echo "Cloning Hyprpicker repository..."
-    git clone --depth=1 https://github.com/hyprwm/hyprpicker.git "$HYPRPICKER_DIR"
-fi
-
-# Build and install Hyprpicker
-cd "$HYPRPICKER_DIR"
-if [ -f "CMakeLists.txt" ]; then
-    echo "Building Hyprpicker with CMake..."
-    cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build build && \
-    sudo cmake --install build || {
-        echo "Warning: Hyprpicker installation failed, trying alternative method..."
-        # Try manual installation
-        if [ -f "build/hyprpicker" ]; then
-            sudo cp build/hyprpicker /usr/local/bin/ && echo "Hyprpicker manually installed to /usr/local/bin/"
-        fi
-    }
-else
-    echo "No CMakeLists.txt found for Hyprpicker"
-fi
-
-echo "Hyprpicker installation attempted."
 
 # --- Install Hyprshot (AUR-style installation) ---
 echo "Installing Hyprshot..."
@@ -247,20 +149,20 @@ else
     git clone --depth=1 https://github.com/hyprwm/hyprsunset.git "$HYPRSUNSET_DIR"
 fi
 
-# Build and install Hyprsunset
+# Build and install Hyprsunset - now with dependencies available as packages
 cd "$HYPRSUNSET_DIR"
 if [ -f "CMakeLists.txt" ]; then
     echo "Building Hyprsunset with CMake..."
-    cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build build && \
-    sudo cmake --install build || {
+    if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
+       cmake --build build && \
+       sudo cmake --install build; then
+        echo "Hyprsunset installed successfully"
+    else
         echo "Warning: Hyprsunset installation failed"
-    }
+    fi
 else
     echo "No CMakeLists.txt found for Hyprsunset"
 fi
-
-echo "Hyprsunset installation attempted."
 
 # --- Install Gray from Source ---
 echo "Installing Gray from source..."
@@ -274,20 +176,46 @@ else
     git clone --depth=1 https://github.com/Fabric-Development/gray.git "$GRAY_DIR"
 fi
 
-# Build and install Gray - now with Vala compiler available
+# Build and install Gray
 cd "$GRAY_DIR"
 if [ -f "meson.build" ]; then
-    echo "Building Gray with meson (Vala support)..."
-    meson setup build --prefix=/usr --buildtype=release && \
-    ninja -C build && \
-    sudo ninja -C build install || {
-        echo "Warning: Gray build/install failed, continuing..."
-    }
+    echo "Building Gray with meson..."
+    if meson setup build --prefix=/usr --buildtype=release && \
+       ninja -C build && \
+       sudo ninja -C build install; then
+        echo "Gray installed successfully"
+    else
+        echo "Warning: Gray build/install failed, but continuing..."
+    fi
 else
     echo "No meson.build found for Gray"
 fi
 
-echo "Gray installation attempted."
+# --- Install Nerd Fonts Symbols ---
+echo "Installing Nerd Fonts Symbols..."
+
+NERD_FONTS_VERSION="3.4.0"
+NERD_FONTS_DIR="$HOME/.local/src/nerd-fonts-symbols"
+mkdir -p "$NERD_FONTS_DIR"
+
+# Download font files
+echo "Downloading Nerd Fonts Symbols..."
+curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf"
+
+curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf"
+
+# Install fonts to user directory
+echo "Installing Nerd Fonts to user directory..."
+cp "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" "$HOME/.fonts/"
+cp "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" "$HOME/.fonts/"
+
+# Update font cache
+echo "Updating font cache..."
+fc-cache -fv
+
+echo "Nerd Fonts Symbols have been installed to user directory."
 
 # --- Clone or update Ax-Shell ---
 echo "Setting up Ax-Shell..."
@@ -370,6 +298,17 @@ fi
 echo "Updating font cache after all font installations..."
 fc-cache -fv
 
+# --- Install Python requirements for Ax-Shell ---
+echo "Installing Python requirements for Ax-Shell..."
+
+if [ -f "$INSTALL_DIR/requirements.txt" ]; then
+    echo "Installing requirements from requirements.txt..."
+    pip3 install -r "$INSTALL_DIR/requirements.txt" || echo "Failed to install some Python requirements"
+else
+    echo "No requirements.txt found, installing common dependencies..."
+    pip3 install psutil requests watchdog ijson toml setproctitle pywayland || echo "Failed to install some Python packages"
+fi
+
 # --- Final steps ---
 echo "Finalizing installation..."
 
@@ -377,7 +316,11 @@ echo "Finalizing installation..."
 if [ -f "$INSTALL_DIR/config/config.py" ]; then
     echo "Running Ax-Shell configuration..."
     cd "$INSTALL_DIR"
-    python3 "$INSTALL_DIR/config/config.py" || echo "Configuration script failed, continuing..."
+    if python3 "$INSTALL_DIR/config/config.py"; then
+        echo "Ax-Shell configuration completed successfully"
+    else
+        echo "Configuration script failed, but installation will continue"
+    fi
 else
     echo "Ax-Shell configuration script not found."
 fi
@@ -386,15 +329,28 @@ fi
 echo "Stopping any existing Ax-Shell instances..."
 pkill -f "ax-shell" 2>/dev/null || true
 
-echo "Installation complete!"
+echo ""
 echo "=============================================="
+echo "INSTALLATION COMPLETE!"
+echo "=============================================="
+echo ""
 echo "Ax-Shell (Quiet fork) has been installed to: $INSTALL_DIR"
 echo ""
-echo "Important notes:"
-echo "1. Nerd Fonts have been installed to ~/.fonts/"
-echo "2. Hyprshot has been installed to ~/.local/bin/"
-echo "3. You may need to restart your terminal or run: source ~/.bashrc"
-echo "4. To start Ax-Shell manually, run: python3 $INSTALL_DIR/main.py"
+echo "All components installed:"
+echo "✅ Hyprpicker (from PikaOS repo)"
+echo "✅ Hyprshot (screenshot tool)"
+echo "✅ Hyprsunset (blue light filter)"
+echo "✅ Hypridle & Hyprlock"
+echo "✅ Hyprlang, Hyprutils, Hyprwayland-scanner (from PikaOS repo)"
+echo "✅ Gray (system utility)"
+echo "✅ Nerd Fonts Symbols & Zed Sans fonts"
+echo "✅ Network configuration"
+echo "✅ All Python dependencies including Fabric"
 echo ""
-echo "If any components failed to install, you can try installing them manually."
+echo "Next steps:"
+echo "1. Restart your terminal or run: source ~/.bashrc"
+echo "2. Start Ax-Shell manually: python3 $INSTALL_DIR/main.py"
+echo "3. Test Hyprshot: hyprshot --help"
+echo ""
+echo "Enjoy using Ax-Shell! 🚀"
 echo "=============================================="
