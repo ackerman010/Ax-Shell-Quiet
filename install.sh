@@ -1,12 +1,13 @@
 #!/bin/bash
 
-set -e 
-set -o pipefail
+set -e # Exit immediately if a command fails
+set -o pipefail # Prevent errors in a pipeline from being masked
 
 REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
 INSTALL_DIR="$HOME/.config/Ax-Shell"
 
-# FIX FUNCTIONS
+# --- FIX FUNCTIONS ---
+# Function to automatically fix missing Python imports and indentation errors
 fix_python_imports() {
     local file_path="$1"
     local import_line="$2"
@@ -19,6 +20,7 @@ fix_python_imports() {
 
     echo "⚙️ Fixing imports in $file_path..."
     
+    # Check if the line already exists
     if grep -qF -- "$import_line" "$file_path"; then
         echo "✅ Import '$import_line' already present in $file_path."
         return
@@ -43,13 +45,16 @@ fix_python_imports() {
         local before=("${lines[@]:0:target_index}")
         local after=("${lines[@]:target_index}")
         
+        # Write content back to the file with the new line added and proper indentation
         printf "%s\n" "${before[@]}" > "$file_path"
+        # The added line must be correctly indented (no tabs, just spaces)
         echo "${current_indentation}${import_line}" >> "$file_path"
         printf "%s\n" "${after[@]}" >> "$file_path"
         
         echo "✅ Added '$import_line' to $file_path."
     fi
 }
+# --------------------
 
 echo "Starting Ax-Shell installation for PikaOS..."
 echo "=============================================="
@@ -83,9 +88,8 @@ sudo apt install -y \
     gir1.2-girepository-2.0 golang-go libpugixml-dev \
     libcvc0t64 gir1.2-cvc-1.0 python3-xdg python3-dbus scdoc
 
-# Install remaining dependencies
+# Install remaining dependencies (Separated to fix the 'socat' execution error)
 echo "Installing specific runtime dependencies..."
-
 sudo apt install -y socat playerctl python3-networkmanager gir1.2-nm-1.0 gir1.2-playerctl-2.0 gir1.2-gnomebluetooth-3.0
 
 # Create necessary directories
@@ -101,7 +105,7 @@ else
     git clone --depth=1 "$REPO_URL" "$INSTALL_DIR"
 fi
 
-# Install uwsm
+# Install uwsm (Wayland session manager) from source
 echo "Installing uwsm from source..."
 UWSM_DIR="$HOME/.local/src/uwsm"
 if [ -d "$UWSM_DIR" ]; then
@@ -118,17 +122,19 @@ meson compile -C build
 sudo meson install -C build
 echo "✅ uwsm installed"
 
-# FABRIC INSTALLATION
+# --- FABRIC CLEANUP AND INSTALLATION FIX (Crucial for PyGObject) ---
 echo "Cleaning up conflicting user-installed Python packages..."
+# Force removal of potentially conflicting local packages
 /usr/bin/env python3 -m pip uninstall -y fabric PyGObject pycairo --break-system-packages 2>/dev/null || true
 
 echo "Installing Fabric GUI framework using --break-system-packages and skipping dependencies..."
-
+# Install Fabric without dependencies to force it to use the system PyGObject
 /usr/bin/env python3 -m pip install --break-system-packages --no-deps --no-cache-dir git+https://github.com/Fabric-Development/fabric.git
 echo "✅ Fabric installed"
+# --- END FABRIC FIX ---
 
 
-# Install Hyprshot
+# Install Hyprshot (simple copy)
 echo "Installing Hyprshot..."
 HYPRSHOT_DIR="$HOME/.local/src/hyprshot"
 if [ -d "$HYPRSHOT_DIR" ]; then
@@ -140,10 +146,10 @@ cp "$HYPRSHOT_DIR/hyprshot" "$HOME/.local/bin/hyprshot"
 chmod +x "$HOME/.local/bin/hyprshot"
 echo "✅ Hyprshot installed"
 
-# Install Fonts
+# --- Install Fonts ---
 echo "Installing fonts..."
 
-# Zed Sans Fonts
+# 1. Zed Sans Fonts
 echo "Installing Zed Sans fonts..."
 if [ ! -d "$HOME/.local/share/fonts/zed-sans" ]; then
     mkdir -p "$HOME/.local/share/fonts/zed-sans"
@@ -159,7 +165,38 @@ else
     echo "✅ Zed Sans fonts already installed"
 fi
 
-# Copy Ax-Shell fonts
+# 2. Nerd Fonts Symbols (The fix you requested)
+echo "Installing necessary Nerd Fonts Symbols..."
+
+# Define necessary variables (using a known stable version)
+NERD_FONTS_VERSION="3.2.1"
+NERD_FONTS_DIR="/tmp/nerd-fonts-install"
+USER_FONTS_DIR="$HOME/.local/share/fonts"
+
+mkdir -p "$NERD_FONTS_DIR"
+
+# Download font files (Symbols Only)
+echo "Downloading Nerd Fonts Symbols..."
+
+if curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf" && \
+   curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
+    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf"; then
+
+    # Install fonts to user directory
+    echo "Installing Nerd Fonts to user directory: $USER_FONTS_DIR"
+    cp "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" "$USER_FONTS_DIR/"
+    cp "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" "$USER_FONTS_DIR/"
+    
+    echo "✅ Nerd Fonts Symbols have been installed."
+else
+    echo "⚠️ Failed to download Nerd Fonts, skipping font installation."
+fi
+
+# Clean up temp directory
+rm -rf "$NERD_FONTS_DIR"
+
+# 3. Copy Ax-Shell fonts
 if [ -d "$INSTALL_DIR/assets/fonts" ]; then
     echo "Copying Ax-Shell local fonts..."
     mkdir -p "$HOME/.local/share/fonts/tabler-icons"
@@ -170,9 +207,9 @@ fi
 fc-cache -fv
 echo "✅ Fonts installation completed"
 
-# PYTHON
+# --- PYTHON CODE FIXES (Crucial for launch) ---
 echo "Applying Python import fixes to Ax-Shell source files..."
-
+# 1. Fix missing NetworkClient import in modules/metrics.py (Line 22)
 fix_python_imports \
     "$INSTALL_DIR/modules/metrics.py" \
     "from services.network import NetworkClient" \
@@ -183,6 +220,7 @@ fix_python_imports \
     "$INSTALL_DIR/modules/buttons.py" \
     "from services.network import NetworkClient" \
     15
+# --- END PYTHON CODE FIXES ---
 
 
 # Network services handling
@@ -226,7 +264,7 @@ echo "Running Ax-Shell configuration..."
 cd "$INSTALL_DIR"
 python3 config/config.py
 
-# Start Ax-Shell
+# Start Ax-Shell with uwsm (the proper way)
 echo "Starting Ax-Shell..."
 pkill -f "ax-shell" 2>/dev/null || true
 uwsm app -- python3 "$INSTALL_DIR/main.py" > /dev/null 2>&1 &
