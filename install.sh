@@ -124,13 +124,15 @@ echo "✅ uwsm installed"
 
 # --- FABRIC CLEANUP AND INSTALLATION FIX (Crucial for PyGObject) ---
 echo "Cleaning up conflicting user-installed Python packages..."
-# Force removal of potentially conflicting local packages
 /usr/bin/env python3 -m pip uninstall -y fabric PyGObject pycairo --break-system-packages 2>/dev/null || true
 
 echo "Installing Fabric GUI framework using --break-system-packages and skipping dependencies..."
-# Install Fabric without dependencies to force it to use the system PyGObject
 /usr/bin/env python3 -m pip install --break-system-packages --no-deps --no-cache-dir git+https://github.com/Fabric-Development/fabric.git
 echo "✅ Fabric installed"
+
+echo "Installing missing Python dependencies (loguru, etc.)..."
+/usr/bin/env python3 -m pip install --break-system-packages --no-cache-dir loguru
+echo "✅ Loguru installed"
 # --- END FABRIC FIX ---
 
 
@@ -209,13 +211,13 @@ echo "✅ Fonts installation completed"
 
 # --- PYTHON CODE FIXES (Crucial for launch) ---
 echo "Applying Python import fixes to Ax-Shell source files..."
-# 1. Fix missing NetworkClient import in modules/metrics.py (Line 22)
+
 fix_python_imports \
     "$INSTALL_DIR/modules/metrics.py" \
     "from services.network import NetworkClient" \
     22
 
-# 2. Fix missing NetworkClient import in modules/buttons.py (approx Line 15)
+
 fix_python_imports \
     "$INSTALL_DIR/modules/buttons.py" \
     "from services.network import NetworkClient" \
