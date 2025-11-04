@@ -7,7 +7,7 @@ set -o pipefail  # Prevent errors in a pipeline from being masked
 REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
 INSTALL_DIR="$HOME/.config/Ax-Shell"
 
-# Package list for PikaOS
+# Package list for PikaOS - verified available packages
 PACKAGES=(
     brightnessctl
     cava
@@ -18,7 +18,6 @@ PACKAGES=(
     gpu-screen-recorder
     hypridle
     hyprlock
-    hyprpicker
     libnotify-bin
     matugen
     network-manager-applet
@@ -61,17 +60,22 @@ PYTHON_PACKAGES=(
     python3-watchdog
 )
 
-# Build dependencies
+# Build dependencies for Hyprland ecosystem
 BUILD_PACKAGES=(
     cmake
     gcc
     gdb
     git
-    hyprland-git
-    hyprutils-git
-    hyprwayland-scanner-git
+    meson
+    ninja-build
+    pkg-config
     wayland
     wayland-protocols
+    libwayland-dev
+    libxkbcommon-dev
+    libcairo2-dev
+    libpango1.0-dev
+    libjpeg-dev
 )
 
 # Prevent running as root
@@ -82,7 +86,7 @@ fi
 
 # Use pikman if available, otherwise use apt
 if command -v pikman &>/dev/null; then
-    PKG_MANAGER="pikman install"  # Fixed: removed -y flag
+    PKG_MANAGER="pikman install"
     echo "Using pikman for package installation."
 elif command -v apt &>/dev/null; then
     PKG_MANAGER="sudo apt install -y"
@@ -111,6 +115,71 @@ $PKG_MANAGER "${PYTHON_PACKAGES[@]}" || { echo "Some Python packages failed to i
 # Install build dependencies
 echo "Installing build dependencies..."
 $PKG_MANAGER "${BUILD_PACKAGES[@]}" || { echo "Some build packages failed to install. Continuing with script..."; }
+
+# --- Install Hyprland Dependencies from Source ---
+
+# Install hyprutils from source (required by hyprsunset)
+echo "Installing hyprutils from source..."
+
+HYPRUTILS_DIR="$HOME/.local/src/hyprutils"
+mkdir -p "$(dirname "$HYPRUTILS_DIR")"
+if [ -d "$HYPRUTILS_DIR" ]; then
+    echo "Updating hyprutils repository..."
+    git -C "$HYPRUTILS_DIR" pull
+else
+    echo "Cloning hyprutils repository..."
+    git clone --depth=1 https://github.com/hyprwm/hyprutils.git "$HYPRUTILS_DIR"
+fi
+
+# Build and install hyprutils
+cd "$HYPRUTILS_DIR"
+cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr -S . -B ./build
+cmake --build ./build --config Release --target all
+sudo cmake --install build
+
+echo "hyprutils has been installed from source."
+
+# Install hyprwayland-scanner from source
+echo "Installing hyprwayland-scanner from source..."
+
+HYPRWAYLAND_SCANNER_DIR="$HOME/.local/src/hyprwayland-scanner"
+mkdir -p "$(dirname "$HYPRWAYLAND_SCANNER_DIR")"
+if [ -d "$HYPRWAYLAND_SCANNER_DIR" ]; then
+    echo "Updating hyprwayland-scanner repository..."
+    git -C "$HYPRWAYLAND_SCANNER_DIR" pull
+else
+    echo "Cloning hyprwayland-scanner repository..."
+    git clone --depth=1 https://github.com/hyprwm/hyprwayland-scanner.git "$HYPRWAYLAND_SCANNER_DIR"
+fi
+
+# Build and install hyprwayland-scanner
+cd "$HYPRWAYLAND_SCANNER_DIR"
+cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr -S . -B ./build
+cmake --build ./build --config Release --target all
+sudo cmake --install build
+
+echo "hyprwayland-scanner has been installed from source."
+
+# --- Install Hyprpicker from Source (since not available in repos) ---
+echo "Installing Hyprpicker from source..."
+
+HYPRPICKER_DIR="$HOME/.local/src/hyprpicker"
+mkdir -p "$(dirname "$HYPRPICKER_DIR")"
+if [ -d "$HYPRPICKER_DIR" ]; then
+    echo "Updating Hyprpicker repository..."
+    git -C "$HYPRPICKER_DIR" pull
+else
+    echo "Cloning Hyprpicker repository..."
+    git clone --depth=1 https://github.com/hyprwm/hyprpicker.git "$HYPRPICKER_DIR"
+fi
+
+# Build and install Hyprpicker
+cd "$HYPRPICKER_DIR"
+cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr -S . -B ./build
+cmake --build ./build --config Release --target all
+sudo cmake --install build
+
+echo "Hyprpicker has been installed from source."
 
 # --- Install Hyprshot from Source ---
 echo "Installing Hyprshot from source..."
@@ -145,9 +214,9 @@ else
     git clone --depth=1 https://github.com/hyprwm/hyprsunset.git "$HYPRSUNSET_DIR"
 fi
 
-# Build and install Hyprsunset using CMake (fixed based on AUR build)
+# Build and install Hyprsunset using CMake
 cd "$HYPRSUNSET_DIR"
-cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX=/usr -S . -B ./build
+cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr -S . -B ./build
 cmake --build ./build --config Release --target hyprsunset
 sudo cmake --install build
 
@@ -166,7 +235,7 @@ else
     git clone --depth=1 https://github.com/Fabric-Development/gray.git "$GRAY_DIR"
 fi
 
-# Build and install Gray using Meson
+# Build and install Gray
 cd "$GRAY_DIR"
 meson setup --prefix=/usr build .
 sudo ninja -C build install
