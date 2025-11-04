@@ -64,7 +64,7 @@ else
 fi
 
 cd "$UWSM_DIR"
-meson build -Duuctl=enabled -Dfumon=enabled -Duwsm-app=enabled
+meson setup build -Duuctl=enabled -Dfumon=enabled -Duwsm-app=enabled
 meson compile -C build
 sudo meson install -C build
 echo "✅ uwsm installed"
