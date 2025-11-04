@@ -63,7 +63,7 @@ echo "=============================================="
 echo "Updating package lists..."
 sudo apt update
 
-# Install general dependencies (The large block that worked fine)
+# --- FULL DEPENDENCY INSTALLATION (Includes Vte Fix) ---
 echo "Installing core dependencies..."
 sudo apt install -y \
     brightnessctl cava cliphist gobject-introspection gpu-screen-recorder hypridle hyprlock \
@@ -86,10 +86,10 @@ sudo apt install -y \
     python3-setuptools python3-wheel python3-build python3-installer \
     libgirepository1.0-dev python3-dev libffi-dev gir1.2-glib-2.0 \
     gir1.2-girepository-2.0 golang-go libpugixml-dev \
-    libcvc0t64 gir1.2-cvc-1.0 python3-xdg python3-dbus scdoc \ 
-    gir1.2-vte-2.91
+    libcvc0t64 gir1.2-cvc-1.0 python3-xdg python3-dbus scdoc \
+    gir1.2-vte-2.91 # <-- NEW: Fixes the Vte namespace crash
 
-# Install remaining dependencies (Separated to fix the 'socat' execution error)
+# Install remaining dependencies
 echo "Installing specific runtime dependencies..."
 sudo apt install -y socat playerctl python3-networkmanager gir1.2-nm-1.0 gir1.2-playerctl-2.0 gir1.2-gnomebluetooth-3.0
 
@@ -124,7 +124,7 @@ sudo meson install -C build
 echo "✅ uwsm installed"
 
 # --- Install Gray (FIX for 'Namespace Gray not available') ---
-echo "Installing Gray..."
+echo "Installing Gray (required for System Tray)..."
 GRAY_DIR="$HOME/.local/src/gray"
 if [ -d "$GRAY_DIR" ]; then
     echo "Updating Gray repository..."
@@ -139,18 +139,12 @@ if [ -f "meson.build" ]; then
     echo "Building Gray..."
     rm -rf build
     
-    # Check for valac and dependencies (ensure necessary build tools are available)
-    echo "Checking Gray dependencies..."
-    command -v valac >/dev/null 2>&1 && echo "  ✅ valac found" || echo "  ❌ valac missing (ensure valac is in dependencies)"
-    
     if meson setup build --prefix=/usr --buildtype=release && \
        ninja -C build; then
-        # Install files required for GI (GObject Introspection)
         if sudo ninja -C build install; then
             echo "✅ Gray installed via ninja"
         else
             echo "⚠️ Ninja install failed, trying manual installation..."
-            # Manual copy might be necessary if ninja install fails permissions/paths
             if [ -f "build/libgray-0.1.so" ]; then
                 sudo cp build/libgray-0.1.so /usr/lib/
                 sudo cp build/libgray-0.1.a /usr/lib/
@@ -167,15 +161,13 @@ fi
 
 # --- FABRIC CLEANUP AND INSTALLATION FIX (Crucial for PyGObject) ---
 echo "Cleaning up conflicting user-installed Python packages..."
-# Force removal of potentially conflicting local packages
 /usr/bin/env python3 -m pip uninstall -y fabric PyGObject pycairo loguru --break-system-packages 2>/dev/null || true
 
 echo "Installing Fabric GUI framework using --break-system-packages and skipping dependencies..."
-# Install Fabric without dependencies to force it to use the system PyGObject
 /usr/bin/env python3 -m pip install --break-system-packages --no-deps --no-cache-dir git+https://github.com/Fabric-Development/fabric.git
 echo "✅ Fabric installed"
 
-# --- INSTALL MISSING PYTHON DEPENDENCIES (loguru fix) ---
+# --- INSTALL MISSING PYTHON DEPENDENCIES (Loguru Fix) ---
 echo "Installing missing Python dependencies (loguru, etc.)..."
 /usr/bin/env python3 -m pip install --break-system-packages --no-cache-dir loguru
 echo "✅ Loguru installed"
@@ -213,17 +205,13 @@ else
     echo "✅ Zed Sans fonts already installed"
 fi
 
-# 2. Nerd Fonts Symbols (The fix you requested)
+# 2. Nerd Fonts Symbols
 echo "Installing necessary Nerd Fonts Symbols..."
-
-# Define necessary variables (using a known stable version)
 NERD_FONTS_VERSION="3.2.1"
 NERD_FONTS_DIR="/tmp/nerd-fonts-install"
 USER_FONTS_DIR="$HOME/.local/share/fonts"
-
 mkdir -p "$NERD_FONTS_DIR"
 
-# Download font files (Symbols Only)
 echo "Downloading Nerd Fonts Symbols..."
 
 if curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
@@ -231,7 +219,6 @@ if curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
    curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
     "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf"; then
 
-    # Install fonts to user directory
     echo "Installing Nerd Fonts to user directory: $USER_FONTS_DIR"
     cp "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" "$USER_FONTS_DIR/"
     cp "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" "$USER_FONTS_DIR/"
@@ -241,7 +228,6 @@ else
     echo "⚠️ Failed to download Nerd Fonts, skipping font installation."
 fi
 
-# Clean up temp directory
 rm -rf "$NERD_FONTS_DIR"
 
 # 3. Copy Ax-Shell fonts
@@ -326,8 +312,8 @@ echo ""
 echo "**Ax-Shell is now running with uwsm!**"
 echo ""
 echo "🔥 **IMPORTANT LAST STEP (Visibility)**:"
-echo "If the widgets are not visible, ensure you have the correct layer rule in your Hyprland config (~/.config/hypr/hyprland.conf):"
-echo "layerrule = all, fabric"
-echo "Then run: **hyprctl reload**"
+echo "1. Ensure this line is in ~/.config/hypr/hyprland.conf:"
+echo "   layerrule = all, fabric"
+echo "2. Then run: **hyprctl reload**"
 echo ""
 echo "=============================================="
