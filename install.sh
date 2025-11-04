@@ -7,7 +7,41 @@ set -o pipefail  # Prevent errors in a pipeline from being masked
 REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
 INSTALL_DIR="$HOME/.config/Ax-Shell"
 
-# Package list for PikaOS - verified available packages
+# Function to check if user has sudo access
+check_sudo() {
+    echo "Checking sudo access..."
+    if ! sudo -n true 2>/dev/null; then
+        echo "Please enter your sudo password when prompted to continue installation."
+        if ! sudo -v; then
+            echo "Error: Sudo authentication failed. Please run with proper sudo access."
+            exit 1
+        fi
+    fi
+}
+
+# Function to install packages with proper error handling
+install_packages() {
+    local packages=("$@")
+    
+    if command -v pikman &>/dev/null; then
+        echo "Installing packages with pikman: ${packages[*]}"
+        pikman install "${packages[@]}" || {
+            echo "Warning: Some packages failed to install with pikman. Continuing..."
+            return 0
+        }
+    elif command -v apt &>/dev/null; then
+        echo "Installing packages with apt: ${packages[*]}"
+        sudo apt install -y "${packages[@]}" || {
+            echo "Warning: Some packages failed to install with apt. Continuing..."
+            return 0
+        }
+    else
+        echo "Error: No package manager found (pikman or apt)"
+        return 1
+    fi
+}
+
+# Package list for PikaOS
 PACKAGES=(
     brightnessctl
     cava
@@ -83,46 +117,56 @@ if [ "$(id -u)" -eq 0 ]; then
     exit 1
 fi
 
-# Use pikman if available, otherwise use apt
-if command -v pikman &>/dev/null; then
-    PKG_MANAGER="pikman install"
-    echo "Using pikman for package installation."
-elif command -v apt &>/dev/null; then
-    PKG_MANAGER="sudo apt install -y"
-    echo "Using apt for package installation."
-else
-    echo "Error: Neither pikman nor apt found. Cannot install packages."
-    exit 1
-fi
+echo "Starting Ax-Shell installation for PikaOS..."
+echo "=============================================="
+
+# Check sudo access early
+check_sudo
 
 # Update package lists
 echo "Updating package lists..."
 if command -v pikman &>/dev/null; then
-    pikman update
+    pikman update || echo "Warning: pikman update failed, continuing..."
+elif command -v apt &>/dev/null; then
+    sudo apt update || echo "Warning: apt update failed, continuing..."
 else
-    sudo apt update
+    echo "Error: No package manager found"
+    exit 1
 fi
 
-# Install required system packages
-echo "Installing required system packages..."
-$PKG_MANAGER "${PACKAGES[@]}" || { echo "Some packages failed to install. Continuing with script..."; }
+# Install packages in smaller batches to handle failures better
+echo "Installing system packages..."
+for package in "${PACKAGES[@]}"; do
+    echo "Installing: $package"
+    install_packages "$package"
+done
 
-# Install Python packages
 echo "Installing Python packages..."
-$PKG_MANAGER "${PYTHON_PACKAGES[@]}" || { echo "Some Python packages failed to install. Continuing with script..."; }
+for package in "${PYTHON_PACKAGES[@]}"; do
+    echo "Installing: $package"
+    install_packages "$package"
+done
 
-# Install build dependencies
 echo "Installing build dependencies..."
-$PKG_MANAGER "${BUILD_PACKAGES[@]}" || { echo "Some build packages failed to install. Continuing with script..."; }
+for package in "${BUILD_PACKAGES[@]}"; do
+    echo "Installing: $package"
+    install_packages "$package"
+done
 
-# --- Install Nerd Fonts Symbols from Source ---
+# Create necessary directories
+echo "Creating necessary directories..."
+mkdir -p "$HOME/.local/src"
+mkdir -p "$HOME/.local/bin"
+mkdir -p "$HOME/.fonts"
+
+# --- Install Nerd Fonts Symbols ---
 echo "Installing Nerd Fonts Symbols..."
 
 NERD_FONTS_VERSION="3.4.0"
 NERD_FONTS_DIR="$HOME/.local/src/nerd-fonts-symbols"
 mkdir -p "$NERD_FONTS_DIR"
 
-# Download font files and configuration
+# Download font files
 echo "Downloading Nerd Fonts Symbols..."
 curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
     "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFont-Regular.ttf"
@@ -130,84 +174,52 @@ curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
 curl -L -o "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
     "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/patched-fonts/NerdFontsSymbolsOnly/SymbolsNerdFontMono-Regular.ttf"
 
-curl -L -o "$NERD_FONTS_DIR/10-nerd-font-symbols.conf" \
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/10-nerd-font-symbols.conf"
-
-curl -L -o "$NERD_FONTS_DIR/LICENSE" \
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v$NERD_FONTS_VERSION/LICENSE"
-
-# Create font directories
-echo "Installing Nerd Fonts to system..."
-sudo mkdir -p /usr/share/fonts/TTF
-sudo mkdir -p /usr/share/fontconfig/conf.avail
-sudo mkdir -p /usr/share/licenses/ttf-nerd-fonts-symbols-common
-
-# Install the fonts
-sudo install -Dm644 "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" \
-    /usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf
-
-sudo install -Dm644 "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" \
-    /usr/share/fonts/TTF/SymbolsNerdFontMono-Regular.ttf
-
-# Install fontconfig configuration
-sudo install -Dm644 "$NERD_FONTS_DIR/10-nerd-font-symbols.conf" \
-    /usr/share/fontconfig/conf.avail/10-nerd-font-symbols.conf
-
-# Install license
-sudo install -Dm644 "$NERD_FONTS_DIR/LICENSE" \
-    /usr/share/licenses/ttf-nerd-fonts-symbols-common/LICENSE
-
-# Create symlink for fontconfig
-if [ ! -f /etc/fonts/conf.d/10-nerd-font-symbols.conf ]; then
-    sudo ln -sf /usr/share/fontconfig/conf.avail/10-nerd-font-symbols.conf \
-        /etc/fonts/conf.d/10-nerd-font-symbols.conf
-fi
+# Install fonts to user directory
+echo "Installing Nerd Fonts to user directory..."
+cp "$NERD_FONTS_DIR/SymbolsNerdFont-Regular.ttf" "$HOME/.fonts/"
+cp "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" "$HOME/.fonts/"
 
 # Update font cache
 echo "Updating font cache..."
-sudo fc-cache -fv
+fc-cache -fv
 
-echo "Nerd Fonts Symbols have been installed successfully."
+echo "Nerd Fonts Symbols have been installed to user directory."
 
-# --- Install missing Hyprland components from Source ---
-
-# Install hyprpicker from source (not available in repos)
+# --- Install Hyprpicker from Source ---
 echo "Installing Hyprpicker from source..."
 
 HYPRPICKER_DIR="$HOME/.local/src/hyprpicker"
-mkdir -p "$(dirname "$HYPRPICKER_DIR")"
 if [ -d "$HYPRPICKER_DIR" ]; then
     echo "Updating Hyprpicker repository..."
-    git -C "$HYPRPICKER_DIR" pull
+    git -C "$HYPRPICKER_DIR" pull || echo "Git pull failed, continuing with existing code..."
 else
     echo "Cloning Hyprpicker repository..."
     git clone --depth=1 https://github.com/hyprwm/hyprpicker.git "$HYPRPICKER_DIR"
 fi
 
-# Build and install Hyprpicker
+# Build and install Hyprpicker to local directory
 cd "$HYPRPICKER_DIR"
-make all
-sudo make install
+make all && sudo make install || {
+    echo "Warning: Hyprpicker build/install failed, continuing..."
+}
 
-echo "Hyprpicker has been installed from source."
+echo "Hyprpicker installation attempted."
 
 # --- Install Hyprshot from Source ---
 echo "Installing Hyprshot from source..."
 
 HYPRSHOT_DIR="$HOME/.local/src/Hyprshot"
-mkdir -p "$(dirname "$HYPRSHOT_DIR")"
 if [ -d "$HYPRSHOT_DIR" ]; then
     echo "Updating Hyprshot repository..."
-    git -C "$HYPRSHOT_DIR" pull
+    git -C "$HYPRSHOT_DIR" pull || echo "Git pull failed, continuing with existing code..."
 else
     echo "Cloning Hyprshot repository..."
     git clone --depth=1 https://github.com/Gustash/hyprshot.git "$HYPRSHOT_DIR"
 fi
 
 # Create symlink in local bin directory
-mkdir -p "$HOME/.local/bin"
-ln -sf "$HYPRSHOT_DIR/hyprshot" "$HOME/.local/bin/hyprshot"
-chmod +x "$HYPRSHOT_DIR/hyprshot"
+cp "$HYPRSHOT_DIR/hyprshot" "$HOME/.local/bin/hyprshot"
+chmod +x "$HOME/.local/bin/hyprshot"
 
 echo "Hyprshot has been installed to $HOME/.local/bin/hyprshot"
 
@@ -215,31 +227,31 @@ echo "Hyprshot has been installed to $HOME/.local/bin/hyprshot"
 echo "Installing Hyprsunset from source..."
 
 HYPRSUNSET_DIR="$HOME/.local/src/hyprsunset"
-mkdir -p "$(dirname "$HYPRSUNSET_DIR")"
 if [ -d "$HYPRSUNSET_DIR" ]; then
     echo "Updating Hyprsunset repository..."
-    git -C "$HYPRSUNSET_DIR" pull
+    git -C "$HYPRSUNSET_DIR" pull || echo "Git pull failed, continuing with existing code..."
 else
     echo "Cloning Hyprsunset repository..."
     git clone --depth=1 https://github.com/hyprwm/hyprsunset.git "$HYPRSUNSET_DIR"
 fi
 
-# Build and install Hyprsunset using CMake
+# Build and install Hyprsunset
 cd "$HYPRSUNSET_DIR"
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-sudo cmake --install build
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
+cmake --build build && \
+sudo cmake --install build || {
+    echo "Warning: Hyprsunset build/install failed, continuing..."
+}
 
-echo "Hyprsunset has been installed from source."
+echo "Hyprsunset installation attempted."
 
 # --- Install Gray from Source ---
 echo "Installing Gray from source..."
 
 GRAY_DIR="$HOME/.local/src/gray"
-mkdir -p "$(dirname "$GRAY_DIR")"
 if [ -d "$GRAY_DIR" ]; then
     echo "Updating Gray repository..."
-    git -C "$GRAY_DIR" pull
+    git -C "$GRAY_DIR" pull || echo "Git pull failed, continuing with existing code..."
 else
     echo "Cloning Gray repository..."
     git clone --depth=1 https://github.com/Fabric-Development/gray.git "$GRAY_DIR"
@@ -247,95 +259,120 @@ fi
 
 # Build and install Gray
 cd "$GRAY_DIR"
-meson setup --prefix=/usr build .
-sudo ninja -C build install
+meson setup --prefix=/usr build . && \
+sudo ninja -C build install || {
+    echo "Warning: Gray build/install failed, continuing..."
+}
 
-echo "Gray has been installed from source."
+echo "Gray installation attempted."
 
-# Clone or update the Ax-Shell repository (using user's fork)
+# --- Clone or update Ax-Shell ---
+echo "Setting up Ax-Shell..."
+
 if [ -d "$INSTALL_DIR" ]; then
     echo "Updating Ax-Shell (Quiet fork)..."
-    git -C "$INSTALL_DIR" pull
+    git -C "$INSTALL_DIR" pull || echo "Git pull failed, continuing with existing code..."
 else
     echo "Cloning Ax-Shell (Quiet fork)..."
     git clone --depth=1 "$REPO_URL" "$INSTALL_DIR"
 fi
 
-echo "Installing required fonts..."
+# --- Install Zed Sans fonts ---
+echo "Installing Zed Sans fonts..."
 
 FONT_URL="https://github.com/zed-industries/zed-fonts/releases/download/1.2.0/zed-sans-1.2.0.zip"
 FONT_DIR="$HOME/.fonts/zed-sans"
 TEMP_ZIP="/tmp/zed-sans-1.2.0.zip"
 
-# Check if fonts are already installed
 if [ ! -d "$FONT_DIR" ]; then
-    echo "Downloading fonts from $FONT_URL..."
+    echo "Downloading Zed Sans fonts..."
     curl -L -o "$TEMP_ZIP" "$FONT_URL"
 
-    echo "Extracting fonts to $FONT_DIR..."
+    echo "Extracting fonts..."
     mkdir -p "$FONT_DIR"
     unzip -o "$TEMP_ZIP" -d "$FONT_DIR"
 
     echo "Cleaning up..."
     rm "$TEMP_ZIP"
 else
-    echo "Fonts are already installed. Skipping download and extraction."
+    echo "Zed Sans fonts are already installed."
 fi
 
-# Network services handling
+# --- Network services configuration ---
 echo "Configuring network services..."
 
-# Disable iwd if enabled/active
-if systemctl is-enabled --quiet iwd 2>/dev/null || systemctl is-active --quiet iwd 2>/dev/null; then
-    echo "Disabling iwd..."
-    sudo systemctl disable --now iwd
+# Only attempt network configuration if we have sudo access
+if sudo -n true 2>/dev/null; then
+    # Disable iwd if enabled/active
+    if systemctl is-enabled --quiet iwd 2>/dev/null || systemctl is-active --quiet iwd 2>/dev/null; then
+        echo "Disabling iwd..."
+        sudo systemctl disable --now iwd 2>/dev/null || echo "Could not disable iwd"
+    else
+        echo "iwd is not enabled or not present."
+    fi
+
+    # Enable NetworkManager if not enabled
+    if ! systemctl is-enabled --quiet NetworkManager 2>/dev/null; then
+        echo "Enabling NetworkManager..."
+        sudo systemctl enable NetworkManager 2>/dev/null || echo "Could not enable NetworkManager"
+    else
+        echo "NetworkManager is already enabled."
+    fi
+
+    # Start NetworkManager if not running
+    if ! systemctl is-active --quiet NetworkManager 2>/dev/null; then
+        echo "Starting NetworkManager..."
+        sudo systemctl start NetworkManager 2>/dev/null || echo "Could not start NetworkManager"
+    else
+        echo "NetworkManager is already running."
+    fi
 else
-    echo "iwd is already disabled."
+    echo "Skipping network configuration (no sudo access)"
 fi
 
-# Enable NetworkManager if not enabled
-if ! systemctl is-enabled --quiet NetworkManager 2>/dev/null; then
-    echo "Enabling NetworkManager..."
-    sudo systemctl enable NetworkManager
-else
-    echo "NetworkManager is already enabled."
-fi
+# --- Copy local fonts from Ax-Shell ---
+echo "Copying Ax-Shell fonts..."
 
-# Start NetworkManager if not running
-if ! systemctl is-active --quiet NetworkManager 2>/dev/null; then
-    echo "Starting NetworkManager..."
-    sudo systemctl start NetworkManager
-else
-    echo "NetworkManager is already running."
-fi
-
-# Copy local fonts if not already present
-if [ ! -d "$HOME/.fonts/tabler-icons" ]; then
+if [ -d "$INSTALL_DIR/assets/fonts" ] && [ ! -d "$HOME/.fonts/tabler-icons" ]; then
     echo "Copying local fonts to $HOME/.fonts/tabler-icons..."
     mkdir -p "$HOME/.fonts/tabler-icons"
-    cp -r "$INSTALL_DIR/assets/fonts/"* "$HOME/.fonts"
+    cp -r "$INSTALL_DIR/assets/fonts/"* "$HOME/.fonts/" 2>/dev/null || echo "Some fonts could not be copied"
 else
-    echo "Local fonts are already installed. Skipping copy."
+    echo "Local fonts are already installed or not available."
 fi
 
-# Ensure ~/.local/bin is in PATH for hyprshot
+# --- Update PATH if needed ---
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    echo "Adding ~/.local/bin to PATH in .bashrc..."
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-    echo "Added ~/.local/bin to PATH in .bashrc"
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# Run configuration and start Ax-Shell
-cd "$INSTALL_DIR"
-python3 "$INSTALL_DIR/config/config.py"
-echo "Starting Ax-Shell..."
-killall ax-shell 2>/dev/null || true
+# --- Final steps ---
+echo "Finalizing installation..."
 
-# Since uwsm is not available, starting directly with Python
-echo "Starting Ax-Shell directly with Python (uwsm not available)..."
-python3 "$INSTALL_DIR/main.py" > /dev/null 2>&1 & disown
+# Try to run configuration if Ax-Shell is available
+if [ -f "$INSTALL_DIR/config/config.py" ]; then
+    echo "Running Ax-Shell configuration..."
+    cd "$INSTALL_DIR"
+    python3 "$INSTALL_DIR/config/config.py" || echo "Configuration script failed, continuing..."
+else
+    echo "Ax-Shell configuration script not found."
+fi
+
+# Kill any existing Ax-Shell instances
+echo "Stopping any existing Ax-Shell instances..."
+pkill -f "ax-shell" 2>/dev/null || true
 
 echo "Installation complete!"
-echo "Ax-Shell (Quiet fork) has been successfully installed from $REPO_URL"
-echo "Nerd Fonts Symbols have been installed system-wide"
-echo "Note: Some components were installed in ~/.local/bin - make sure this is in your PATH."
+echo "=============================================="
+echo "Ax-Shell (Quiet fork) has been installed to: $INSTALL_DIR"
+echo ""
+echo "Important notes:"
+echo "1. Nerd Fonts have been installed to ~/.fonts/"
+echo "2. Hyprshot has been installed to ~/.local/bin/"
+echo "3. You may need to restart your terminal or run: source ~/.bashrc"
+echo "4. To start Ax-Shell manually, run: python3 $INSTALL_DIR/main.py"
+echo ""
+echo "If any components failed to install, you can try installing them manually."
+echo "=============================================="
