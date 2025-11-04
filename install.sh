@@ -7,7 +7,7 @@ set -o pipefail  # Prevent errors in a pipeline from being masked
 REPO_URL="https://github.com/Ackerman-00/Ax-Shell-Quiet.git"
 INSTALL_DIR="$HOME/.config/Ax-Shell"
 
-# Package list for PikaOS - using available packages where possible
+# Package list for PikaOS
 PACKAGES=(
     brightnessctl
     cava
@@ -47,21 +47,26 @@ PACKAGES=(
     jq
     grim
     slurp
-    # Hypr tools from PikaOS repo (excluding hyprpicker - we'll build from source)
-    libhyprlang
-    libhyprutils
+    # Hypr tools
+    libhyprlang-dev
+    libhyprutils-dev
     hyprwayland-scanner
     # Image manipulation
     imagemagick
     # Gray dependencies
     libdbusmenu-gtk3-dev
-    # Correct Fabric package
-    python3-fabric
+    # Additional Fabric dependencies
+    gtk-layer-shell
+    libdbusmenu-gtk3-4
+    cinnamon-desktop
+    webkit2gtk-4.1
+    # Python pip
+    python3-pip
 )
 
-# Python packages for Ax-Shell
+# Python packages for Ax-Shell (exactly as specified by dev)
 PYTHON_PACKAGES=(
-    python3-gi
+    python3-gobject
     python3-ijson
     python3-numpy
     python3-pil
@@ -92,6 +97,17 @@ BUILD_PACKAGES=(
     libwayland-dev
     wayland-protocols
     libxkbcommon-dev
+    # Python build dependencies for Fabric
+    python3-setuptools
+    python3-wheel
+    python3-build
+    python3-installer
+)
+
+# Fabric Python dependencies
+FABRIC_PYTHON_DEPS=(
+    loguru
+    click
 )
 
 # Prevent running as root
@@ -122,8 +138,68 @@ echo "Creating necessary directories..."
 mkdir -p "$HOME/.local/src"
 mkdir -p "$HOME/.local/bin"
 mkdir -p "$HOME/.fonts"
+mkdir -p "$HOME/.local/lib/python3.12/site-packages"
 
-# --- Build and Install Hyprpicker from Source (AUR-style) ---
+# --- Install Fabric from Source (AUR-style) ---
+echo "Building and installing Fabric from source (AUR-style)..."
+
+FABRIC_DIR="$HOME/.local/src/fabric"
+if [ -d "$FABRIC_DIR" ]; then
+    echo "Updating Fabric repository..."
+    git -C "$FABRIC_DIR" pull || echo "Git pull failed, continuing with existing code..."
+else
+    echo "Cloning Fabric repository..."
+    git clone --depth=1 https://github.com/Fabric-Development/fabric.git "$FABRIC_DIR"
+fi
+
+# Install Fabric Python dependencies first
+echo "Installing Fabric Python dependencies..."
+pip3 install --user "${FABRIC_PYTHON_DEPS[@]}"
+
+# Build and install Fabric using AUR-style approach
+cd "$FABRIC_DIR"
+echo "Building Fabric with Python build system..."
+
+# Get version info (AUR-style)
+FABRIC_VERSION="r$(git rev-list --count HEAD).$(git rev-parse --short=7 HEAD)"
+echo "Building Fabric version: $FABRIC_VERSION"
+
+# Build the wheel
+if python3 -m build --wheel --no-isolation; then
+    # Install the wheel
+    WHEEL_FILE=$(ls dist/*.whl | head -n1)
+    if [ -n "$WHEEL_FILE" ]; then
+        pip3 install --user "$WHEEL_FILE"
+        echo "✅ Fabric $FABRIC_VERSION installed successfully"
+    else
+        echo "❌ No wheel file found for Fabric"
+        # Fallback: install directly
+        pip3 install --user .
+    fi
+else
+    echo "❌ Fabric build failed, trying direct installation..."
+    pip3 install --user .
+fi
+
+# --- Install fabric-cli ---
+echo "Installing fabric-cli..."
+
+FABRIC_CLI_DIR="$HOME/.local/src/fabric-cli"
+if [ -d "$FABRIC_CLI_DIR" ]; then
+    echo "Updating fabric-cli repository..."
+    git -C "$FABRIC_CLI_DIR" pull || echo "Git pull failed, continuing with existing code..."
+else
+    echo "Cloning fabric-cli repository..."
+    git clone --depth=1 https://github.com/Fabric-Development/fabric-cli.git "$FABRIC_CLI_DIR"
+fi
+
+# Install fabric-cli
+cd "$FABRIC_CLI_DIR"
+pip3 install --user .
+
+echo "✅ fabric-cli installed successfully"
+
+# --- Build and Install Hyprpicker from Source ---
 echo "Building and installing Hyprpicker from source..."
 
 HYPRPICKER_DIR="$HOME/.local/src/hyprpicker"
@@ -135,32 +211,22 @@ else
     git clone --depth=1 https://github.com/hyprwm/hyprpicker.git "$HYPRPICKER_DIR"
 fi
 
-# Build and install Hyprpicker using AUR approach
+# Build and install Hyprpicker
 cd "$HYPRPICKER_DIR"
 if [ -f "CMakeLists.txt" ]; then
-    echo "Building Hyprpicker with CMake (AUR-style)..."
-    if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr && \
+    echo "Building Hyprpicker with CMake..."
+    if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
        cmake --build build && \
        sudo cmake --install build; then
-        echo "Hyprpicker installed successfully"
-        # Install license file (AUR-style)
-        sudo install -Dm644 LICENSE -t /usr/share/licenses/hyprpicker/
+        echo "✅ Hyprpicker installed successfully"
     else
-        echo "Warning: Hyprpicker installation failed"
-        # Try alternative build method if CMake fails
-        if [ -f "meson.build" ]; then
-            echo "Trying Meson build for Hyprpicker..."
-            meson setup build --prefix=/usr --buildtype=release && \
-            ninja -C build && \
-            sudo ninja -C build install && \
-            echo "Hyprpicker installed successfully with Meson"
-        fi
+        echo "❌ Hyprpicker installation failed"
     fi
 else
     echo "No CMakeLists.txt found for Hyprpicker"
 fi
 
-# --- Install Hyprshot (AUR-style installation) ---
+# --- Install Hyprshot ---
 echo "Installing Hyprshot..."
 
 HYPRSHOT_DIR="$HOME/.local/src/hyprshot"
@@ -172,13 +238,13 @@ else
     git clone --depth=1 https://github.com/Gustash/Hyprshot.git "$HYPRSHOT_DIR"
 fi
 
-# AUR-style installation - just copy the script and make it executable
+# Install Hyprshot script
 echo "Installing Hyprshot script..."
 mkdir -p "$HOME/.local/bin"
 cp "$HYPRSHOT_DIR/hyprshot" "$HOME/.local/bin/hyprshot"
 chmod +x "$HOME/.local/bin/hyprshot"
 
-echo "Hyprshot has been installed to $HOME/.local/bin/hyprshot"
+echo "✅ Hyprshot has been installed to $HOME/.local/bin/hyprshot"
 
 # --- Install Hyprsunset from Source ---
 echo "Installing Hyprsunset from source..."
@@ -192,16 +258,16 @@ else
     git clone --depth=1 https://github.com/hyprwm/hyprsunset.git "$HYPRSUNSET_DIR"
 fi
 
-# Build and install Hyprsunset - now with dependencies available as packages
+# Build and install Hyprsunset
 cd "$HYPRSUNSET_DIR"
 if [ -f "CMakeLists.txt" ]; then
     echo "Building Hyprsunset with CMake..."
     if cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
        cmake --build build && \
        sudo cmake --install build; then
-        echo "Hyprsunset installed successfully"
+        echo "✅ Hyprsunset installed successfully"
     else
-        echo "Warning: Hyprsunset installation failed"
+        echo "❌ Hyprsunset installation failed"
     fi
 else
     echo "No CMakeLists.txt found for Hyprsunset"
@@ -226,9 +292,9 @@ if [ -f "meson.build" ]; then
     if meson setup build --prefix=/usr --buildtype=release && \
        ninja -C build && \
        sudo ninja -C build install; then
-        echo "Gray installed successfully"
+        echo "✅ Gray installed successfully"
     else
-        echo "Warning: Gray build/install failed, but continuing..."
+        echo "❌ Gray build/install failed, but continuing..."
     fi
 else
     echo "No meson.build found for Gray"
@@ -258,7 +324,7 @@ cp "$NERD_FONTS_DIR/SymbolsNerdFontMono-Regular.ttf" "$HOME/.fonts/"
 echo "Updating font cache..."
 fc-cache -fv
 
-echo "Nerd Fonts Symbols have been installed to user directory."
+echo "✅ Nerd Fonts Symbols have been installed to user directory."
 
 # --- Clone or update Ax-Shell ---
 echo "Setting up Ax-Shell..."
@@ -288,8 +354,9 @@ if [ ! -d "$FONT_DIR" ]; then
 
     echo "Cleaning up..."
     rm "$TEMP_ZIP"
+    echo "✅ Zed Sans fonts installed successfully"
 else
-    echo "Zed Sans fonts are already installed."
+    echo "✅ Zed Sans fonts are already installed."
 fi
 
 # --- Network services configuration ---
@@ -300,7 +367,7 @@ if systemctl is-enabled --quiet iwd 2>/dev/null || systemctl is-active --quiet i
     echo "Disabling iwd..."
     sudo systemctl disable --now iwd 2>/dev/null || echo "Could not disable iwd"
 else
-    echo "iwd is not enabled or not present."
+    echo "✅ iwd is not enabled or not present."
 fi
 
 # Enable NetworkManager if not enabled
@@ -308,7 +375,7 @@ if ! systemctl is-enabled --quiet NetworkManager 2>/dev/null; then
     echo "Enabling NetworkManager..."
     sudo systemctl enable NetworkManager 2>/dev/null || echo "Could not enable NetworkManager"
 else
-    echo "NetworkManager is already enabled."
+    echo "✅ NetworkManager is already enabled."
 fi
 
 # Start NetworkManager if not running
@@ -316,7 +383,7 @@ if ! systemctl is-active --quiet NetworkManager 2>/dev/null; then
     echo "Starting NetworkManager..."
     sudo systemctl start NetworkManager 2>/dev/null || echo "Could not start NetworkManager"
 else
-    echo "NetworkManager is already running."
+    echo "✅ NetworkManager is already running."
 fi
 
 # --- Copy local fonts from Ax-Shell ---
@@ -326,8 +393,9 @@ if [ -d "$INSTALL_DIR/assets/fonts" ] && [ ! -d "$HOME/.fonts/tabler-icons" ]; t
     echo "Copying local fonts to $HOME/.fonts/tabler-icons..."
     mkdir -p "$HOME/.fonts/tabler-icons"
     cp -r "$INSTALL_DIR/assets/fonts/"* "$HOME/.fonts/" 2>/dev/null || echo "Some fonts could not be copied"
+    echo "✅ Ax-Shell fonts copied successfully"
 else
-    echo "Local fonts are already installed or not available."
+    echo "✅ Local fonts are already installed or not available."
 fi
 
 # --- Update PATH if needed ---
@@ -335,6 +403,14 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     echo "Adding ~/.local/bin to PATH in .bashrc..."
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
     export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Add Python user site to PATH if needed
+PYTHON_USER_BIN=$(python3 -m site --user-base)/bin
+if [ -d "$PYTHON_USER_BIN" ] && [[ ":$PATH:" != *":$PYTHON_USER_BIN:"* ]]; then
+    echo "Adding Python user bin to PATH in .bashrc..."
+    echo "export PATH=\"$PYTHON_USER_BIN:\$PATH\"" >> "$HOME/.bashrc"
+    export PATH="$PYTHON_USER_BIN:$PATH"
 fi
 
 # --- Update font cache again after all font installations ---
@@ -346,10 +422,10 @@ echo "Installing Python requirements for Ax-Shell..."
 
 if [ -f "$INSTALL_DIR/requirements.txt" ]; then
     echo "Installing requirements from requirements.txt..."
-    pip3 install -r "$INSTALL_DIR/requirements.txt" || echo "Failed to install some Python requirements"
+    pip3 install --user -r "$INSTALL_DIR/requirements.txt" || echo "Failed to install some Python requirements"
 else
     echo "No requirements.txt found, installing common dependencies..."
-    pip3 install psutil requests watchdog ijson toml setproctitle pywayland || echo "Failed to install some Python packages"
+    pip3 install --user psutil requests watchdog ijson toml setproctitle pywayland || echo "Failed to install some Python packages"
 fi
 
 # --- Final steps ---
@@ -374,33 +450,55 @@ if [ ! -d "$INSTALL_DIR" ]; then
     MISSING_COMPONENTS+=("Ax-Shell")
 fi
 
-# Check if fonts were installed
-if [ ! -f "$HOME/.fonts/SymbolsNerdFont-Regular.ttf" ]; then
-    MISSING_COMPONENTS+=("Nerd Fonts")
+# Check if Fabric is available
+if ! python3 -c "import fabric" 2>/dev/null; then
+    MISSING_COMPONENTS+=("Fabric")
+fi
+
+# Check if fabric-cli is available
+if ! python3 -c "import fabric_cli" 2>/dev/null 2>&1; then
+    MISSING_COMPONENTS+=("fabric-cli")
+fi
+
+# Check if Gray is available
+if ! command -v gray >/dev/null 2>&1; then
+    MISSING_COMPONENTS+=("Gray")
 fi
 
 if [ ${#MISSING_COMPONENTS[@]} -eq 0 ]; then
-    echo "All critical components installed successfully!"
+    echo "✅ All critical components installed successfully!"
 else
-    echo "Warning: The following components failed to install: ${MISSING_COMPONENTS[*]}"
+    echo "⚠️  The following components failed to install: ${MISSING_COMPONENTS[*]}"
 fi
 
-# Try to run configuration if Ax-Shell is available
+# Run Ax-Shell configuration
 if [ -f "$INSTALL_DIR/config/config.py" ]; then
     echo "Running Ax-Shell configuration..."
     cd "$INSTALL_DIR"
     if python3 "$INSTALL_DIR/config/config.py"; then
-        echo "Ax-Shell configuration completed successfully"
+        echo "✅ Ax-Shell configuration completed successfully"
     else
-        echo "Configuration script failed, but installation will continue"
+        echo "❌ Configuration script failed"
+        echo "You may need to install missing dependencies manually"
     fi
 else
-    echo "Ax-Shell configuration script not found."
+    echo "❌ Ax-Shell configuration script not found."
 fi
 
 # Kill any existing Ax-Shell instances
 echo "Stopping any existing Ax-Shell instances..."
 pkill -f "ax-shell" 2>/dev/null || true
+
+# Start Ax-Shell using uwsm as per dev's instructions
+echo "Starting Ax-Shell..."
+if command -v uwsm >/dev/null 2>&1; then
+    uwsm app -- python "$INSTALL_DIR/main.py" > /dev/null 2>&1 & disown
+    echo "✅ Ax-Shell started with uwsm"
+else
+    # Fallback: start directly
+    python3 "$INSTALL_DIR/main.py" > /dev/null 2>&1 &
+    echo "✅ Ax-Shell started directly (uwsm not found)"
+fi
 
 echo ""
 echo "=============================================="
@@ -409,22 +507,26 @@ echo "=============================================="
 echo ""
 echo "Ax-Shell (Quiet fork) has been installed to: $INSTALL_DIR"
 echo ""
-echo "All components installed:"
-echo "✅ Hyprpicker (built from latest source)"
-echo "✅ Hyprshot (screenshot tool)"
-echo "✅ Hyprsunset (blue light filter)"
+echo "Components status:"
+if command -v hyprpicker >/dev/null 2>&1; then echo "✅ Hyprpicker"; else echo "❌ Hyprpicker"; fi
+if [ -f "$HOME/.local/bin/hyprshot" ]; then echo "✅ Hyprshot"; else echo "❌ Hyprshot"; fi
+if command -v hyprsunset >/dev/null 2>&1; then echo "✅ Hyprsunset"; else echo "❌ Hyprsunset"; fi
+if python3 -c "import fabric" 2>/dev/null; then echo "✅ Fabric"; else echo "❌ Fabric"; fi
+if python3 -c "import fabric_cli" 2>/dev/null 2>&1; then echo "✅ fabric-cli"; else echo "❌ fabric-cli"; fi
+if command -v gray >/dev/null 2>&1; then echo "✅ Gray"; else echo "❌ Gray"; fi
 echo "✅ Hypridle & Hyprlock"
-echo "✅ Hyprlang, Hyprutils, Hyprwayland-scanner (from PikaOS repo)"
-echo "✅ Gray (system utility)"
 echo "✅ Nerd Fonts Symbols & Zed Sans fonts"
 echo "✅ Network configuration"
-echo "✅ All Python dependencies including Fabric"
 echo ""
 echo "Next steps:"
 echo "1. Restart your terminal or run: source ~/.bashrc"
-echo "2. Start Ax-Shell manually: python3 $INSTALL_DIR/main.py"
-echo "3. Test Hyprshot: hyprshot --help"
-echo "4. Test Hyprpicker: hyprpicker --help"
+echo "2. Ax-Shell should be running automatically"
+echo "3. Test components manually if needed:"
+echo "   - hyprshot --help"
+echo "   - hyprpicker --help"
+echo "   - python3 -c 'import fabric; print(\"Fabric OK\")'"
+echo "   - python3 -c 'import fabric_cli; print(\"fabric-cli OK\")'"
 echo ""
+echo "If any components failed, check the output above for errors."
 echo "Enjoy using Ax-Shell! 🚀"
 echo "=============================================="
