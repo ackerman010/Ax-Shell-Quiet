@@ -65,6 +65,7 @@ sudo apt update
 # FULL DEPENDENCY INSTALLATION
 echo "Installing core dependencies..."
 sudo apt install -y \
+    python-is-python3 \
     brightnessctl cava cliphist gobject-introspection gpu-screen-recorder hypridle hyprlock \
     libnotify-bin matugen network-manager-applet nm-connection-editor \
     fonts-noto fonts-noto-color-emoji fonts-noto-mono \
